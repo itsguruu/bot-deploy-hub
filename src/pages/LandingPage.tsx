@@ -4,8 +4,11 @@ import { ScrollReveal } from "@/components/ScrollReveal";
 import {
   Bot, Zap, Shield, Clock, Server, CreditCard,
   Phone, Mail, ArrowRight, Star, CheckCircle2,
-  Terminal, Users, Rocket, Gift, Megaphone
+  Terminal, Users, Rocket, Gift, Megaphone, Activity,
+  AlertTriangle, TrendingUp
 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 const features = [
   { icon: Bot, title: "WhatsApp Bot MD", desc: "Deploy multi-device WhatsApp bots with full session management" },
@@ -30,6 +33,18 @@ const offers = [
 ];
 
 export default function LandingPage() {
+  const [stats, setStats] = useState({ total_bots: 0, running_bots: 0, failed_bots: 0, total_users: 0, total_requests: 0 });
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      const { data } = await supabase.from("platform_stats").select("*").limit(1).single();
+      if (data) setStats(data);
+    };
+    fetchStats();
+    const interval = setInterval(fetchStats, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <div className="min-h-screen bg-background overflow-hidden">
       {/* Nav */}
@@ -42,18 +57,15 @@ export default function LandingPage() {
             <span className="text-lg font-bold tracking-tight">BOTHOST</span>
           </Link>
           <div className="hidden md:flex items-center gap-8 text-sm text-muted-foreground">
+            <a href="#stats" className="hover:text-foreground transition-colors">Dashboard</a>
             <a href="#features" className="hover:text-foreground transition-colors">Features</a>
             <a href="#pricing" className="hover:text-foreground transition-colors">Pricing</a>
             <a href="#offers" className="hover:text-foreground transition-colors">Offers</a>
             <a href="#payment" className="hover:text-foreground transition-colors">Payment</a>
           </div>
           <div className="flex items-center gap-3">
-            <Link to="/login">
-              <Button variant="ghost" size="sm">Log in</Button>
-            </Link>
-            <Link to="/register">
-              <Button variant="hero" size="sm">Get Started</Button>
-            </Link>
+            <Link to="/login"><Button variant="ghost" size="sm">Log in</Button></Link>
+            <Link to="/register"><Button variant="hero" size="sm">Get Started</Button></Link>
           </div>
         </div>
       </nav>
@@ -84,16 +96,8 @@ export default function LandingPage() {
           </ScrollReveal>
           <ScrollReveal delay={300}>
             <div className="flex items-center justify-center gap-4 flex-wrap">
-              <Link to="/register">
-                <Button variant="hero" size="lg" className="text-base px-8">
-                  Deploy for Free <ArrowRight className="w-4 h-4 ml-1" />
-                </Button>
-              </Link>
-              <a href="#features">
-                <Button variant="hero-outline" size="lg" className="text-base px-8">
-                  See Features
-                </Button>
-              </a>
+              <Link to="/register"><Button variant="hero" size="lg" className="text-base px-8">Deploy for Free <ArrowRight className="w-4 h-4 ml-1" /></Button></Link>
+              <a href="#features"><Button variant="hero-outline" size="lg" className="text-base px-8">See Features</Button></a>
             </div>
           </ScrollReveal>
 
@@ -116,6 +120,38 @@ export default function LandingPage() {
               </div>
             </div>
           </ScrollReveal>
+        </div>
+      </section>
+
+      {/* Live Stats Dashboard */}
+      <section id="stats" className="py-20 px-4 bg-secondary/30">
+        <div className="container mx-auto max-w-5xl">
+          <ScrollReveal>
+            <div className="text-center mb-12">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-primary/30 bg-primary/5 text-primary text-sm font-medium mb-4">
+                <Activity className="w-3.5 h-3.5" /> Live Platform Stats
+              </div>
+              <h2 className="text-3xl md:text-4xl font-bold mb-4">Real-Time Dashboard</h2>
+              <p className="text-muted-foreground text-lg">See what's happening on BOTHOST right now.</p>
+            </div>
+          </ScrollReveal>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            {[
+              { label: "Total Bots", value: stats.total_bots, icon: Server, color: "text-primary" },
+              { label: "Running Now", value: stats.running_bots, icon: Activity, color: "text-success" },
+              { label: "Failed", value: stats.failed_bots, icon: AlertTriangle, color: "text-destructive" },
+              { label: "Total Users", value: stats.total_users, icon: Users, color: "text-[hsl(var(--info))]" },
+              { label: "Requests", value: stats.total_requests.toLocaleString(), icon: TrendingUp, color: "text-warning" },
+            ].map((s, i) => (
+              <ScrollReveal key={s.label} delay={i * 80}>
+                <div className="surface rounded-xl p-5 text-center surface-hover">
+                  <s.icon className={`w-6 h-6 ${s.color} mx-auto mb-2`} />
+                  <p className="text-2xl md:text-3xl font-bold tabular-nums">{s.value}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{s.label}</p>
+                </div>
+              </ScrollReveal>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -186,36 +222,24 @@ export default function LandingPage() {
                 <p className="text-muted-foreground text-sm mb-6">1 deployment included</p>
                 <ul className="space-y-3 mb-8">
                   {["1 Bot Deployment", "Base64 Session Support", "Basic Dashboard", "Community Support"].map(f => (
-                    <li key={f} className="flex items-center gap-2 text-sm">
-                      <CheckCircle2 className="w-4 h-4 text-primary flex-shrink-0" />
-                      {f}
-                    </li>
+                    <li key={f} className="flex items-center gap-2 text-sm"><CheckCircle2 className="w-4 h-4 text-primary flex-shrink-0" />{f}</li>
                   ))}
                 </ul>
-                <Link to="/register">
-                  <Button variant="outline" className="w-full">Get Started</Button>
-                </Link>
+                <Link to="/register"><Button variant="outline" className="w-full">Get Started</Button></Link>
               </div>
             </ScrollReveal>
             <ScrollReveal direction="right">
               <div className="surface rounded-xl p-8 border-primary/30 glow-sm relative h-full">
-                <div className="absolute -top-3 right-6 px-3 py-1 rounded-full bg-primary text-primary-foreground text-xs font-semibold">
-                  RECOMMENDED
-                </div>
+                <div className="absolute -top-3 right-6 px-3 py-1 rounded-full bg-primary text-primary-foreground text-xs font-semibold">RECOMMENDED</div>
                 <div className="text-sm text-primary font-medium mb-2">PRO</div>
                 <div className="text-4xl font-bold mb-1">Pay as you go</div>
                 <p className="text-muted-foreground text-sm mb-6">Via M-Pesa / Airtel Money</p>
                 <ul className="space-y-3 mb-8">
                   {["Unlimited Deployments", "Priority Support", "Auto-Restart on Crash", "Real-time Logs", "Custom Bot Config"].map(f => (
-                    <li key={f} className="flex items-center gap-2 text-sm">
-                      <CheckCircle2 className="w-4 h-4 text-primary flex-shrink-0" />
-                      {f}
-                    </li>
+                    <li key={f} className="flex items-center gap-2 text-sm"><CheckCircle2 className="w-4 h-4 text-primary flex-shrink-0" />{f}</li>
                   ))}
                 </ul>
-                <Link to="/register">
-                  <Button variant="hero" className="w-full">Start Deploying</Button>
-                </Link>
+                <Link to="/register"><Button variant="hero" className="w-full">Start Deploying</Button></Link>
               </div>
             </ScrollReveal>
           </div>
@@ -238,9 +262,7 @@ export default function LandingPage() {
             {offers.map((o, i) => (
               <ScrollReveal key={o.title} delay={i * 100}>
                 <div className="surface rounded-xl p-6 surface-hover relative overflow-hidden h-full">
-                  <div className="absolute top-4 right-4 px-2 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary">
-                    {o.tag}
-                  </div>
+                  <div className="absolute top-4 right-4 px-2 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary">{o.tag}</div>
                   <o.icon className="w-8 h-8 text-primary mb-4" />
                   <h3 className="font-semibold text-lg mb-2">{o.title}</h3>
                   <p className="text-muted-foreground text-sm">{o.desc}</p>
@@ -307,10 +329,8 @@ export default function LandingPage() {
               <Megaphone className="w-8 h-8 text-primary mx-auto mb-4" />
               <h3 className="text-xl font-bold mb-2">Want to Advertise on BOTHOST?</h3>
               <p className="text-muted-foreground mb-4">Reach thousands of WhatsApp bot developers. Contact us for ad placement.</p>
-              <a href="mailto:contact@bothost.com">
-                <Button variant="outline" size="sm">
-                  <Mail className="w-4 h-4 mr-1" /> Contact for Ads
-                </Button>
+              <a href="mailto:akidarajab462@gmail.com">
+                <Button variant="outline" size="sm"><Mail className="w-4 h-4 mr-1" /> Contact for Ads</Button>
               </a>
             </div>
           </ScrollReveal>

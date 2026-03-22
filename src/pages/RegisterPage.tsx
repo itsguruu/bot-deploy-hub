@@ -1,18 +1,39 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Bot, Mail, Lock, User, Eye, EyeOff } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
 
 export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const { signUp, user } = useAuth();
+  const navigate = useNavigate();
 
-  const handleRegister = (e: React.FormEvent) => {
+  if (user) {
+    navigate("/dashboard", { replace: true });
+    return null;
+  }
+
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Register:", email);
+    if (password.length < 6) {
+      toast.error("Password must be at least 6 characters");
+      return;
+    }
+    setLoading(true);
+    const { error } = await signUp(email, password, name);
+    setLoading(false);
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success("Account created! Please check your email to verify.");
+    }
   };
 
   return (
@@ -48,21 +69,14 @@ export default function RegisterPage() {
             <label className="text-sm font-medium">Password</label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                type={showPassword ? "text" : "password"}
-                placeholder="••••••••"
-                className="pl-10 pr-10 bg-secondary border-border"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                required
-              />
+              <Input type={showPassword ? "text" : "password"} placeholder="••••••••" className="pl-10 pr-10 bg-secondary border-border" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} />
               <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
           </div>
-          <Button variant="hero" className="w-full" type="submit">
-            Create Account
+          <Button variant="hero" className="w-full" type="submit" disabled={loading}>
+            {loading ? "Creating account..." : "Create Account"}
           </Button>
         </form>
 
