@@ -1,18 +1,36 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Bot, Mail, Lock, Eye, EyeOff } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const { signIn, user, isAdmin } = useAuth();
+  const navigate = useNavigate();
 
-  const handleLogin = (e: React.FormEvent) => {
+  // Redirect if already logged in
+  if (user) {
+    navigate(isAdmin ? "/admin" : "/dashboard", { replace: true });
+    return null;
+  }
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Will integrate with Lovable Cloud auth
-    console.log("Login:", email);
+    setLoading(true);
+    const { error } = await signIn(email, password);
+    setLoading(false);
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success("Logged in successfully!");
+      // Auth state change will trigger redirect
+    }
   };
 
   return (
@@ -34,39 +52,21 @@ export default function LoginPage() {
             <label className="text-sm font-medium">Email</label>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                type="email"
-                placeholder="you@example.com"
-                className="pl-10 bg-secondary border-border"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                required
-              />
+              <Input type="email" placeholder="you@example.com" className="pl-10 bg-secondary border-border" value={email} onChange={e => setEmail(e.target.value)} required />
             </div>
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">Password</label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                type={showPassword ? "text" : "password"}
-                placeholder="••••••••"
-                className="pl-10 pr-10 bg-secondary border-border"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
+              <Input type={showPassword ? "text" : "password"} placeholder="••••••••" className="pl-10 pr-10 bg-secondary border-border" value={password} onChange={e => setPassword(e.target.value)} required />
+              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
           </div>
-          <Button variant="hero" className="w-full" type="submit">
-            Log In
+          <Button variant="hero" className="w-full" type="submit" disabled={loading}>
+            {loading ? "Logging in..." : "Log In"}
           </Button>
         </form>
 
