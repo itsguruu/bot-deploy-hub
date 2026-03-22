@@ -302,7 +302,7 @@ export default function AdminDashboard() {
                         <p className="text-xs text-muted-foreground">{owner?.email || "Unknown"}</p>
                       </div>
                     </div>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${d.status === "running" ? "bg-success/10 text-success" : d.status === "failed" ? "bg-destructive/10 text-destructive" : d.status === "pending" ? "bg-warning/10 text-warning" : "bg-muted text-muted-foreground"}`}>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${d.status === "running" ? "bg-green-500/10 text-green-500" : d.status === "failed" ? "bg-destructive/10 text-destructive" : d.status === "deploying" ? "bg-blue-500/10 text-blue-500" : d.status === "pending" ? "bg-yellow-500/10 text-yellow-500" : "bg-muted text-muted-foreground"}`}>
                       {d.status.toUpperCase()}
                     </span>
                   </div>
