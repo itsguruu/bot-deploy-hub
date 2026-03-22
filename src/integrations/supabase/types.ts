@@ -14,16 +14,223 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      deployments: {
+        Row: {
+          created_at: string
+          heroku_app_name: string | null
+          heroku_key_id: string | null
+          id: string
+          logs: string[] | null
+          name: string
+          session_id: string
+          status: Database["public"]["Enums"]["deployment_status"]
+          updated_at: string
+          uptime_start: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          heroku_app_name?: string | null
+          heroku_key_id?: string | null
+          id?: string
+          logs?: string[] | null
+          name: string
+          session_id: string
+          status?: Database["public"]["Enums"]["deployment_status"]
+          updated_at?: string
+          uptime_start?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          heroku_app_name?: string | null
+          heroku_key_id?: string | null
+          id?: string
+          logs?: string[] | null
+          name?: string
+          session_id?: string
+          status?: Database["public"]["Enums"]["deployment_status"]
+          updated_at?: string
+          uptime_start?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deployments_heroku_key_id_fkey"
+            columns: ["heroku_key_id"]
+            isOneToOne: false
+            referencedRelation: "heroku_keys"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      heroku_keys: {
+        Row: {
+          api_key: string
+          created_at: string
+          id: string
+          is_global: boolean
+          team_or_personal: string
+          user_id: string | null
+          valid: boolean
+        }
+        Insert: {
+          api_key: string
+          created_at?: string
+          id?: string
+          is_global?: boolean
+          team_or_personal?: string
+          user_id?: string | null
+          valid?: boolean
+        }
+        Update: {
+          api_key?: string
+          created_at?: string
+          id?: string
+          is_global?: boolean
+          team_or_personal?: string
+          user_id?: string | null
+          valid?: boolean
+        }
+        Relationships: []
+      }
+      payments: {
+        Row: {
+          admin_note: string | null
+          amount: number
+          created_at: string
+          email: string
+          id: string
+          screenshot_url: string | null
+          status: Database["public"]["Enums"]["payment_status"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          admin_note?: string | null
+          amount?: number
+          created_at?: string
+          email: string
+          id?: string
+          screenshot_url?: string | null
+          status?: Database["public"]["Enums"]["payment_status"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          admin_note?: string | null
+          amount?: number
+          created_at?: string
+          email?: string
+          id?: string
+          screenshot_url?: string | null
+          status?: Database["public"]["Enums"]["payment_status"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      platform_stats: {
+        Row: {
+          failed_bots: number
+          id: string
+          running_bots: number
+          total_bots: number
+          total_requests: number
+          total_users: number
+          updated_at: string
+        }
+        Insert: {
+          failed_bots?: number
+          id?: string
+          running_bots?: number
+          total_bots?: number
+          total_requests?: number
+          total_users?: number
+          updated_at?: string
+        }
+        Update: {
+          failed_bots?: number
+          id?: string
+          running_bots?: number
+          total_bots?: number
+          total_requests?: number
+          total_users?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          balance: number
+          created_at: string
+          display_name: string | null
+          email: string
+          free_deploys_used: number
+          id: string
+          restricted: boolean
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          balance?: number
+          created_at?: string
+          display_name?: string | null
+          email: string
+          free_deploys_used?: number
+          id?: string
+          restricted?: boolean
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          balance?: number
+          created_at?: string
+          display_name?: string | null
+          email?: string
+          free_deploys_used?: number
+          id?: string
+          restricted?: boolean
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "user"
+      deployment_status: "running" | "stopped" | "pending" | "failed"
+      payment_status: "pending" | "approved" | "rejected"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +357,10 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "user"],
+      deployment_status: ["running", "stopped", "pending", "failed"],
+      payment_status: ["pending", "approved", "rejected"],
+    },
   },
 } as const
