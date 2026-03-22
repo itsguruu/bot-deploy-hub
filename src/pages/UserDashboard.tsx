@@ -5,8 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Bot, Plus, Server, Activity, Clock, Power, PowerOff,
-  Upload, Mail, Image, AlertCircle, CheckCircle2, LogOut,
-  Key, Terminal, RefreshCw
+  Upload, Mail, Image, AlertCircle, LogOut,
+  Key, Terminal, RefreshCw, Loader2
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -16,7 +16,7 @@ import type { Tables } from "@/integrations/supabase/types";
 type Deployment = Tables<"deployments">;
 
 export default function UserDashboard() {
-  const { user, profile, signOut, refreshProfile } = useAuth();
+  const { user, profile, signOut, refreshProfile, isAdmin } = useAuth();
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [showDeploy, setShowDeploy] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
@@ -30,6 +30,8 @@ export default function UserDashboard() {
   const [herokuKey, setHerokuKey] = useState("");
   const [herokuType, setHerokuType] = useState("personal");
   const [loading, setLoading] = useState(false);
+  const [deployingId, setDeployingId] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const freeUsed = (profile?.free_deploys_used ?? 0) >= 1;
 
@@ -43,11 +45,48 @@ export default function UserDashboard() {
     if (data) setDeployments(data);
   }, [user]);
 
+  // Initial fetch + Realtime subscription
   useEffect(() => {
     fetchDeployments();
-    const interval = setInterval(fetchDeployments, 10000);
-    return () => clearInterval(interval);
   }, [fetchDeployments]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel("user-deployments")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "deployments",
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          if (payload.eventType === "INSERT") {
+            setDeployments((prev) => [payload.new as Deployment, ...prev]);
+          } else if (payload.eventType === "UPDATE") {
+            setDeployments((prev) =>
+              prev.map((d) =>
+                d.id === (payload.new as Deployment).id
+                  ? (payload.new as Deployment)
+                  : d
+              )
+            );
+          } else if (payload.eventType === "DELETE") {
+            setDeployments((prev) =>
+              prev.filter((d) => d.id !== (payload.old as any).id)
+            );
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
 
   const handleDeploy = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,31 +100,75 @@ export default function UserDashboard() {
     }
 
     setLoading(true);
-    const { error } = await supabase.from("deployments").insert({
-      user_id: user.id,
-      name: botName,
-      session_id: sessionId,
-      status: "pending",
-    });
+    const { data, error } = await supabase
+      .from("deployments")
+      .insert({
+        user_id: user.id,
+        name: botName,
+        session_id: sessionId,
+        status: "pending",
+      })
+      .select()
+      .single();
 
     if (error) {
       toast.error("Failed to deploy: " + error.message);
-    } else {
-      // Increment free_deploys_used if this is the free one
-      if (!freeUsed) {
-        await supabase
-          .from("profiles")
-          .update({ free_deploys_used: (profile?.free_deploys_used ?? 0) + 1 })
-          .eq("user_id", user.id);
-      }
-      toast.success("Bot deployment submitted!");
-      setBotName("");
-      setSessionId("");
-      setShowDeploy(false);
-      fetchDeployments();
-      refreshProfile();
+      setLoading(false);
+      return;
+    }
+
+    // Increment free_deploys_used if this is the free one
+    if (!freeUsed) {
+      await supabase
+        .from("profiles")
+        .update({ free_deploys_used: (profile?.free_deploys_used ?? 0) + 1 })
+        .eq("user_id", user.id);
+    }
+
+    toast.success("Bot deployment started!");
+    setBotName("");
+    setSessionId("");
+    setShowDeploy(false);
+    refreshProfile();
+
+    // Call deploy edge function
+    if (data) {
+      setDeployingId(data.id);
+      const { data: session } = await supabase.auth.getSession();
+      supabase.functions.invoke("deploy-bot", {
+        body: { deployment_id: data.id },
+      }).then(() => {
+        setDeployingId(null);
+      }).catch(() => {
+        setDeployingId(null);
+      });
     }
     setLoading(false);
+  };
+
+  const handleBotAction = async (deploymentId: string, action: "start" | "stop" | "restart") => {
+    setActionLoading(deploymentId);
+    try {
+      const { error } = await supabase.functions.invoke("heroku-action", {
+        body: { deployment_id: deploymentId, action },
+      });
+      if (error) toast.error("Action failed: " + error.message);
+      else toast.success(`Bot ${action} successful`);
+    } catch (err: any) {
+      toast.error("Action failed");
+    }
+    setActionLoading(null);
+  };
+
+  const handleFetchLogs = async (deploymentId: string) => {
+    setShowLogs(deploymentId);
+    try {
+      await supabase.functions.invoke("heroku-logs", {
+        body: { deployment_id: deploymentId },
+      });
+    } catch {
+      // Logs will be updated via realtime
+    }
   };
 
   const handlePaymentSubmit = async (e: React.FormEvent) => {
@@ -146,19 +229,19 @@ export default function UserDashboard() {
     setLoading(false);
   };
 
-  const toggleBot = async (id: string, newStatus: "running" | "stopped") => {
-    const { error } = await supabase
-      .from("deployments")
-      .update({ status: newStatus, uptime_start: newStatus === "running" ? new Date().toISOString() : null })
-      .eq("id", id);
-    if (error) toast.error(error.message);
-    else fetchDeployments();
+  const statusColor = (s: string) => {
+    if (s === "running") return "text-green-500";
+    if (s === "deploying") return "text-blue-500";
+    if (s === "stopped" || s === "failed") return "text-destructive";
+    return "text-yellow-500";
   };
 
-  const statusColor = (s: string) => {
-    if (s === "running") return "text-success";
-    if (s === "stopped" || s === "failed") return "text-destructive";
-    return "text-warning";
+  const statusBg = (s: string) => {
+    if (s === "running") return "bg-green-500/10 text-green-500";
+    if (s === "deploying") return "bg-blue-500/10 text-blue-500";
+    if (s === "stopped") return "bg-muted text-muted-foreground";
+    if (s === "failed") return "bg-destructive/10 text-destructive";
+    return "bg-yellow-500/10 text-yellow-500";
   };
 
   const getUptime = (d: Deployment) => {
@@ -181,6 +264,11 @@ export default function UserDashboard() {
           </Link>
           <div className="flex items-center gap-3">
             <span className="text-sm text-muted-foreground hidden sm:block">{profile?.email}</span>
+            {isAdmin && (
+              <Link to="/admin">
+                <Button variant="outline" size="sm" className="text-xs">Admin</Button>
+              </Link>
+            )}
             <Button variant="ghost" size="sm" onClick={signOut}><LogOut className="w-4 h-4" /></Button>
           </div>
         </div>
@@ -235,14 +323,16 @@ export default function UserDashboard() {
                   <Textarea placeholder="Paste your base64 session ID here..." className="bg-secondary font-mono text-xs min-h-[100px]" value={sessionId} onChange={e => setSessionId(e.target.value)} required />
                 </div>
                 {freeUsed && (
-                  <div className="flex items-start gap-2 p-3 rounded-lg bg-warning/10 border border-warning/20 text-sm">
-                    <AlertCircle className="w-4 h-4 text-warning mt-0.5 flex-shrink-0" />
+                  <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-sm">
+                    <AlertCircle className="w-4 h-4 text-yellow-500 mt-0.5 flex-shrink-0" />
                     <span>You've used your free deployment. Balance: KES {profile?.balance ?? 0}</span>
                   </div>
                 )}
                 <div className="flex gap-2 justify-end">
                   <Button type="button" variant="ghost" onClick={() => setShowDeploy(false)}>Cancel</Button>
-                  <Button type="submit" variant="hero" disabled={loading}>{loading ? "Deploying..." : "Deploy"}</Button>
+                  <Button type="submit" variant="hero" disabled={loading}>
+                    {loading ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Deploying...</> : "Deploy"}
+                  </Button>
                 </div>
               </form>
             </div>
@@ -295,11 +385,11 @@ export default function UserDashboard() {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
             <div className="surface rounded-xl p-6 w-full max-w-md">
               <h3 className="text-lg font-bold mb-2">Add Heroku API Key</h3>
-              <p className="text-muted-foreground text-sm mb-4">Provide your own Heroku API key for bot deployments. We'll auto-detect if it's a team or personal key.</p>
+              <p className="text-muted-foreground text-sm mb-4">Provide your own Heroku API key. We'll auto-detect if it's team or personal.</p>
               <form onSubmit={handleSaveHerokuKey} className="space-y-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">API Key</label>
-                  <Input placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" className="bg-secondary font-mono text-xs" value={herokuKey} onChange={e => setHerokuKey(e.target.value)} required />
+                  <Input placeholder="HRKU-xxxxx or xxxxxxxx-xxxx..." className="bg-secondary font-mono text-xs" value={herokuKey} onChange={e => setHerokuKey(e.target.value)} required />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Key Type</label>
@@ -326,7 +416,12 @@ export default function UserDashboard() {
             <div className="surface rounded-xl p-6 w-full max-w-2xl max-h-[80vh] flex flex-col">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-bold flex items-center gap-2"><Terminal className="w-5 h-5 text-primary" /> Live Logs</h3>
-                <Button variant="ghost" size="sm" onClick={() => setShowLogs(null)}>Close</Button>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => handleFetchLogs(showLogs)}>
+                    <RefreshCw className="w-3 h-3 mr-1" /> Refresh
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setShowLogs(null)}>Close</Button>
+                </div>
               </div>
               <div className="flex-1 overflow-y-auto bg-background rounded-lg p-4 font-mono text-xs space-y-1">
                 {deployments.find(d => d.id === showLogs)?.logs?.length ? (
@@ -336,7 +431,7 @@ export default function UserDashboard() {
                 ) : (
                   <div className="text-center text-muted-foreground py-8">
                     <Terminal className="w-6 h-6 mx-auto mb-2 opacity-50" />
-                    <p>No logs yet. Logs will appear once the bot starts running.</p>
+                    <p>No logs yet. Logs will appear once the bot starts deploying.</p>
                   </div>
                 )}
               </div>
@@ -349,38 +444,80 @@ export default function UserDashboard() {
           {deployments.map(d => (
             <div key={d.id} className="surface rounded-xl p-5 flex items-center justify-between flex-wrap gap-4">
               <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center relative">
                   <Bot className="w-5 h-5 text-primary" />
+                  {d.status === "deploying" && (
+                    <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-blue-500 animate-pulse" />
+                  )}
+                  {d.status === "running" && (
+                    <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-green-500" />
+                  )}
                 </div>
                 <div>
                   <h3 className="font-semibold">{d.name}</h3>
-                  <p className="text-xs text-muted-foreground font-mono truncate max-w-[200px]">Session: {d.session_id.substring(0, 20)}...</p>
+                  <p className="text-xs text-muted-foreground font-mono truncate max-w-[200px]">
+                    Session: {d.session_id.substring(0, 20)}...
+                  </p>
+                  {d.heroku_app_name && (
+                    <p className="text-xs text-muted-foreground">
+                      App: {d.heroku_app_name}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-4">
                 <div className="text-right">
-                  <p className={`text-sm font-medium flex items-center gap-1 ${statusColor(d.status)}`}>
-                    <span className="w-1.5 h-1.5 rounded-full bg-current" />
-                    {d.status.charAt(0).toUpperCase() + d.status.slice(1)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Uptime: {getUptime(d)}</p>
+                  <span className={`text-xs px-2 py-1 rounded-full font-semibold ${statusBg(d.status)}`}>
+                    {d.status === "deploying" && <Loader2 className="w-3 h-3 inline mr-1 animate-spin" />}
+                    {d.status.toUpperCase()}
+                  </span>
+                  <p className="text-xs text-muted-foreground mt-1">Uptime: {getUptime(d)}</p>
                 </div>
                 <div className="flex gap-1">
-                  <Button variant="ghost" size="icon" className="h-8 w-8" title="View Logs" onClick={() => setShowLogs(d.id)}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    title="View Logs"
+                    onClick={() => handleFetchLogs(d.id)}
+                  >
                     <Terminal className="w-4 h-4" />
                   </Button>
                   {d.status === "running" ? (
-                    <Button variant="ghost" size="icon" className="h-8 w-8" title="Stop" onClick={() => toggleBot(d.id, "stopped")}>
-                      <PowerOff className="w-4 h-4" />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      title="Stop"
+                      disabled={actionLoading === d.id}
+                      onClick={() => handleBotAction(d.id, "stop")}
+                    >
+                      {actionLoading === d.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <PowerOff className="w-4 h-4" />}
                     </Button>
-                  ) : (
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" title="Start" onClick={() => toggleBot(d.id, "running")}>
-                      <Power className="w-4 h-4" />
+                  ) : d.status !== "deploying" ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-primary"
+                      title="Start"
+                      disabled={actionLoading === d.id}
+                      onClick={() => handleBotAction(d.id, "start")}
+                    >
+                      {actionLoading === d.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Power className="w-4 h-4" />}
+                    </Button>
+                  ) : null}
+                  {d.status !== "deploying" && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      title="Restart"
+                      disabled={actionLoading === d.id}
+                      onClick={() => handleBotAction(d.id, "restart")}
+                    >
+                      <RefreshCw className="w-4 h-4" />
                     </Button>
                   )}
-                  <Button variant="ghost" size="icon" className="h-8 w-8" title="Restart" onClick={() => { toggleBot(d.id, "stopped"); setTimeout(() => toggleBot(d.id, "running"), 1000); }}>
-                    <RefreshCw className="w-4 h-4" />
-                  </Button>
                 </div>
               </div>
             </div>
