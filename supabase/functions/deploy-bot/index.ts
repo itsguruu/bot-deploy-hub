@@ -169,8 +169,9 @@ Deno.serve(async (req) => {
         // Use first team if herokuTeam is not set
         if (!herokuTeam) herokuTeam = teams[0].name;
       }
+    } else {
+      await teamsRes.text(); // consume body only if not already consumed
     }
-    await teamsRes.text(); // consume body if not already
 
     if (!isTeamKey) {
       await addLog("👤 Personal key detected");
