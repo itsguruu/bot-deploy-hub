@@ -171,6 +171,25 @@ export default function UserDashboard() {
     }
   };
 
+  // Auto-refresh logs every 5 seconds when modal is open
+  const logsEndRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showLogs) return;
+    const interval = setInterval(() => {
+      supabase.functions.invoke("heroku-logs", {
+        body: { deployment_id: showLogs },
+      }).catch(() => {});
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [showLogs]);
+
+  // Auto-scroll logs to bottom
+  useEffect(() => {
+    if (showLogs && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [showLogs, deployments]);
+
   const handlePaymentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
