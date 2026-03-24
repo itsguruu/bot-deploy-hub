@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,10 +15,11 @@ export default function LoginPage() {
   const navigate = useNavigate();
 
   // Redirect if already logged in
-  if (user) {
-    navigate(isAdmin ? "/admin" : "/dashboard", { replace: true });
-    return null;
-  }
+  useEffect(() => {
+    if (user) {
+      navigate(isAdmin ? "/admin" : "/dashboard", { replace: true });
+    }
+  }, [user, isAdmin, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,9 +30,10 @@ export default function LoginPage() {
       toast.error(error.message);
     } else {
       toast.success("Logged in successfully!");
-      // Auth state change will trigger redirect
     }
   };
+
+  if (user) return null;
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-4">

@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import {
   Bot, Users, CreditCard, Search, CheckCircle2, XCircle,
   DollarSign, Ban, Server, Activity, Clock, AlertTriangle,
-  Plus, LogOut, Key, Terminal, Eye, RefreshCw
+  Plus, LogOut, Key, Terminal, Eye, RefreshCw, Image, X
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -30,6 +30,7 @@ export default function AdminDashboard() {
   const [globalHerokuKey, setGlobalHerokuKey] = useState("");
   const [globalKeyType, setGlobalKeyType] = useState("personal");
   const [loading, setLoading] = useState(false);
+  const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     const [profilesRes, paymentsRes, deploymentsRes] = await Promise.all([
@@ -59,7 +60,6 @@ export default function AdminDashboard() {
   const approvePayment = async (payment: Payment) => {
     setLoading(true);
     await supabase.from("payments").update({ status: "approved" as const }).eq("id", payment.id);
-    // Add funds to user
     const userProfile = profiles.find(p => p.user_id === payment.user_id);
     if (userProfile) {
       await supabase.from("profiles").update({ balance: Number(userProfile.balance) + Number(payment.amount) }).eq("user_id", payment.user_id);
@@ -107,8 +107,19 @@ export default function AdminDashboard() {
     setLoading(false);
   };
 
+  const viewScreenshot = async (screenshotPath: string) => {
+    const { data } = await supabase.storage
+      .from("payment-screenshots")
+      .createSignedUrl(screenshotPath, 300);
+    if (data?.signedUrl) {
+      setScreenshotUrl(data.signedUrl);
+    } else {
+      toast.error("Failed to load screenshot");
+    }
+  };
+
   const statusBadge = (restricted: boolean) =>
-    restricted ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success";
+    restricted ? "bg-destructive/10 text-destructive" : "bg-green-500/10 text-green-500";
 
   const tabs: { id: Tab; label: string; icon: typeof Users }[] = [
     { id: "overview", label: "Overview", icon: Activity },
@@ -131,7 +142,12 @@ export default function AdminDashboard() {
             </Link>
             <span className="text-xs px-2 py-0.5 rounded-full bg-destructive/10 text-destructive font-semibold">ADMIN</span>
           </div>
-          <Button variant="ghost" size="sm" onClick={signOut}><LogOut className="w-4 h-4" /></Button>
+          <div className="flex items-center gap-2">
+            <Link to="/dashboard">
+              <Button variant="outline" size="sm" className="text-xs">Dashboard</Button>
+            </Link>
+            <Button variant="ghost" size="sm" onClick={signOut}><LogOut className="w-4 h-4" /></Button>
+          </div>
         </div>
       </header>
 
@@ -170,14 +186,15 @@ export default function AdminDashboard() {
               <div className="surface rounded-xl p-5">
                 <h3 className="font-semibold mb-3 flex items-center gap-2"><Activity className="w-4 h-4 text-primary" /> Bot Status</h3>
                 <div className="space-y-2 text-sm">
-                  <div className="flex justify-between"><span className="text-muted-foreground">Running</span><span className="font-bold text-success">{allDeployments.filter(d => d.status === "running").length}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Running</span><span className="font-bold text-green-500">{allDeployments.filter(d => d.status === "running").length}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Deploying</span><span className="font-bold text-blue-500">{allDeployments.filter(d => d.status === "deploying").length}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">Stopped</span><span className="font-bold">{allDeployments.filter(d => d.status === "stopped").length}</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">Pending</span><span className="font-bold text-warning">{allDeployments.filter(d => d.status === "pending").length}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Pending</span><span className="font-bold text-yellow-500">{allDeployments.filter(d => d.status === "pending").length}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">Failed</span><span className="font-bold text-destructive">{allDeployments.filter(d => d.status === "failed").length}</span></div>
                 </div>
               </div>
               <div className="surface rounded-xl p-5">
-                <h3 className="font-semibold mb-3 flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-warning" /> Pending Payments</h3>
+                <h3 className="font-semibold mb-3 flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-yellow-500" /> Pending Payments</h3>
                 {pendingPayments.length > 0 ? pendingPayments.slice(0, 3).map(p => (
                   <div key={p.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
                     <div>
@@ -185,8 +202,13 @@ export default function AdminDashboard() {
                       <p className="text-xs text-muted-foreground">KES {p.amount}</p>
                     </div>
                     <div className="flex gap-1">
+                      {p.screenshot_url && (
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => viewScreenshot(p.screenshot_url!)} title="View Screenshot">
+                          <Eye className="w-3.5 h-3.5 text-primary" />
+                        </Button>
+                      )}
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => rejectPayment(p.id)}><XCircle className="w-3.5 h-3.5 text-destructive" /></Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => approvePayment(p)}><CheckCircle2 className="w-3.5 h-3.5 text-success" /></Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => approvePayment(p)}><CheckCircle2 className="w-3.5 h-3.5 text-green-500" /></Button>
                     </div>
                   </div>
                 )) : <p className="text-sm text-muted-foreground">No pending payments</p>}
@@ -236,7 +258,7 @@ export default function AdminDashboard() {
                           <Plus className="w-4 h-4 text-primary" />
                         </Button>
                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => toggleRestrict(p)} title={p.restricted ? "Unrestrict" : "Restrict"}>
-                          <Ban className={`w-4 h-4 ${p.restricted ? "text-warning" : ""}`} />
+                          <Ban className={`w-4 h-4 ${p.restricted ? "text-yellow-500" : ""}`} />
                         </Button>
                       </div>
                     </div>
@@ -259,21 +281,28 @@ export default function AdminDashboard() {
             <h3 className="text-lg font-bold mb-4">All Payments</h3>
             <div className="space-y-3">
               {payments.map(p => (
-                <div key={p.id} className="surface rounded-xl p-5 flex items-center justify-between flex-wrap gap-4">
-                  <div>
-                    <p className="font-semibold">{p.email}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(p.created_at).toLocaleDateString()} • Status: <span className={p.status === "approved" ? "text-success" : p.status === "rejected" ? "text-destructive" : "text-warning"}>{p.status}</span>
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <p className="font-mono font-bold">KES {p.amount}</p>
-                    {p.status === "pending" && (
-                      <div className="flex gap-1">
-                        <Button variant="ghost" size="sm" onClick={() => rejectPayment(p.id)}><XCircle className="w-4 h-4 text-destructive" /></Button>
-                        <Button variant="hero" size="sm" onClick={() => approvePayment(p)}><CheckCircle2 className="w-4 h-4" /></Button>
-                      </div>
-                    )}
+                <div key={p.id} className="surface rounded-xl p-5">
+                  <div className="flex items-center justify-between flex-wrap gap-4">
+                    <div>
+                      <p className="font-semibold">{p.email}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(p.created_at).toLocaleDateString()} • Status: <span className={p.status === "approved" ? "text-green-500" : p.status === "rejected" ? "text-destructive" : "text-yellow-500"}>{p.status}</span>
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <p className="font-mono font-bold">KES {p.amount}</p>
+                      {p.screenshot_url && (
+                        <Button variant="outline" size="sm" onClick={() => viewScreenshot(p.screenshot_url!)} className="text-xs">
+                          <Image className="w-3 h-3 mr-1" /> View Proof
+                        </Button>
+                      )}
+                      {p.status === "pending" && (
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="sm" onClick={() => rejectPayment(p.id)}><XCircle className="w-4 h-4 text-destructive" /></Button>
+                          <Button variant="hero" size="sm" onClick={() => approvePayment(p)}><CheckCircle2 className="w-4 h-4" /></Button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -300,6 +329,9 @@ export default function AdminDashboard() {
                       <div>
                         <p className="font-semibold">{d.name}</p>
                         <p className="text-xs text-muted-foreground">{owner?.email || "Unknown"}</p>
+                        {d.heroku_app_name && (
+                          <p className="text-xs text-muted-foreground font-mono">{d.heroku_app_name}</p>
+                        )}
                       </div>
                     </div>
                     <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${d.status === "running" ? "bg-green-500/10 text-green-500" : d.status === "failed" ? "bg-destructive/10 text-destructive" : d.status === "deploying" ? "bg-blue-500/10 text-blue-500" : d.status === "pending" ? "bg-yellow-500/10 text-yellow-500" : "bg-muted text-muted-foreground"}`}>
@@ -320,7 +352,7 @@ export default function AdminDashboard() {
             <form onSubmit={saveGlobalHerokuKey} className="surface rounded-xl p-6 space-y-4 max-w-lg">
               <div className="space-y-2">
                 <label className="text-sm font-medium">API Key</label>
-                <Input placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" className="bg-secondary font-mono text-xs" value={globalHerokuKey} onChange={e => setGlobalHerokuKey(e.target.value)} required />
+                <Input placeholder="HRKU-xxxxx or xxxxxxxx-xxxx..." className="bg-secondary font-mono text-xs" value={globalHerokuKey} onChange={e => setGlobalHerokuKey(e.target.value)} required />
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Key Type</label>
@@ -349,6 +381,23 @@ export default function AdminDashboard() {
                 <Button variant="hero" onClick={() => fundAmount && addFunds(selectedUser.user_id, Number(fundAmount))} disabled={!fundAmount || Number(fundAmount) <= 0}>Add</Button>
               </div>
               <Button variant="ghost" className="w-full" onClick={() => setSelectedUser(null)}>Cancel</Button>
+            </div>
+          </div>
+        )}
+
+        {/* Screenshot Viewer Modal */}
+        {screenshotUrl && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
+            <div className="surface rounded-xl p-4 w-full max-w-lg max-h-[85vh] flex flex-col">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-lg font-bold flex items-center gap-2"><Image className="w-5 h-5 text-primary" /> Payment Proof</h3>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setScreenshotUrl(null)}>
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+              <div className="flex-1 overflow-auto rounded-lg">
+                <img src={screenshotUrl} alt="Payment screenshot" className="w-full rounded-lg" />
+              </div>
             </div>
           </div>
         )}

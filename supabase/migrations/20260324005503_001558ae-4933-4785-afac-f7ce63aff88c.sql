@@ -1,0 +1,1 @@
+UPDATE deployments SET status = 'pending', logs = '{}', heroku_app_name = NULL WHERE status = 'deploying' AND heroku_app_name IS NULL;

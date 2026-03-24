@@ -1,0 +1,1 @@
+UPDATE platform_stats SET total_bots = (SELECT count(*) FROM deployments), running_bots = (SELECT count(*) FROM deployments WHERE status = 'running'), failed_bots = (SELECT count(*) FROM deployments WHERE status = 'failed'), total_users = (SELECT count(*) FROM profiles);

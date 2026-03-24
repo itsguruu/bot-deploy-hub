@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,10 +15,11 @@ export default function RegisterPage() {
   const { signUp, user } = useAuth();
   const navigate = useNavigate();
 
-  if (user) {
-    navigate("/dashboard", { replace: true });
-    return null;
-  }
+  useEffect(() => {
+    if (user) {
+      navigate("/dashboard", { replace: true });
+    }
+  }, [user, navigate]);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,6 +36,8 @@ export default function RegisterPage() {
       toast.success("Account created! Please check your email to verify.");
     }
   };
+
+  if (user) return null;
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-4">
