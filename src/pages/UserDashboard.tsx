@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -170,6 +170,25 @@ export default function UserDashboard() {
       // Logs will be updated via realtime
     }
   };
+
+  // Auto-refresh logs every 5 seconds when modal is open
+  const logsEndRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showLogs) return;
+    const interval = setInterval(() => {
+      supabase.functions.invoke("heroku-logs", {
+        body: { deployment_id: showLogs },
+      }).catch(() => {});
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [showLogs]);
+
+  // Auto-scroll logs to bottom
+  useEffect(() => {
+    if (showLogs && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [showLogs, deployments]);
 
   const handlePaymentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -415,7 +434,10 @@ export default function UserDashboard() {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
             <div className="surface rounded-xl p-6 w-full max-w-2xl max-h-[80vh] flex flex-col">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold flex items-center gap-2"><Terminal className="w-5 h-5 text-primary" /> Live Logs</h3>
+                <h3 className="text-lg font-bold flex items-center gap-2">
+                  <Terminal className="w-5 h-5 text-primary" /> Live Logs
+                  <span className="text-xs text-muted-foreground font-normal ml-2 animate-pulse">● Auto-refreshing</span>
+                </h3>
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" onClick={() => handleFetchLogs(showLogs)}>
                     <RefreshCw className="w-3 h-3 mr-1" /> Refresh
@@ -423,10 +445,12 @@ export default function UserDashboard() {
                   <Button variant="ghost" size="sm" onClick={() => setShowLogs(null)}>Close</Button>
                 </div>
               </div>
-              <div className="flex-1 overflow-y-auto bg-background rounded-lg p-4 font-mono text-xs space-y-1">
+              <div className="flex-1 overflow-y-auto bg-background rounded-lg p-4 font-mono text-xs space-y-1 max-h-[60vh]">
                 {deployments.find(d => d.id === showLogs)?.logs?.length ? (
                   deployments.find(d => d.id === showLogs)!.logs!.map((log, i) => (
-                    <p key={i} className="text-muted-foreground"><span className="text-primary">›</span> {log}</p>
+                    <p key={i} className={`${log.includes("❌") || log.includes("error") ? "text-destructive" : log.includes("✅") ? "text-green-500" : log.includes("⚠️") ? "text-yellow-500" : "text-muted-foreground"}`}>
+                      <span className="text-primary">›</span> {log}
+                    </p>
                   ))
                 ) : (
                   <div className="text-center text-muted-foreground py-8">
@@ -434,6 +458,7 @@ export default function UserDashboard() {
                     <p>No logs yet. Logs will appear once the bot starts deploying.</p>
                   </div>
                 )}
+                <div ref={logsEndRef} />
               </div>
             </div>
           </div>
