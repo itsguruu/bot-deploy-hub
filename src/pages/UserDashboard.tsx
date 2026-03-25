@@ -481,7 +481,7 @@ export default function UserDashboard() {
                 <div>
                   <h3 className="font-semibold">{d.name}</h3>
                   <p className="text-xs text-muted-foreground font-mono truncate max-w-[200px]">
-                    Session: {d.session_id.substring(0, 20)}...
+                    Session: {d.session_id ? d.session_id.substring(0, 20) : "N/A"}...
                   </p>
                   {d.heroku_app_name && (
                     <p className="text-xs text-muted-foreground">
