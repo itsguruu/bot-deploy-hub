@@ -247,7 +247,7 @@ export default function AdminDashboard() {
                     <div className="flex items-center gap-6 text-sm">
                       <div className="text-center">
                         <p className="text-muted-foreground text-xs">Balance</p>
-                        <p className="font-mono font-bold">KES {p.balance}</p>
+                        <p className="font-mono font-bold">{p.balance} GRD</p>
                       </div>
                       <div className="text-center">
                         <p className="text-muted-foreground text-xs">Deploys</p>
