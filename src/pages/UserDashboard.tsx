@@ -348,7 +348,7 @@ export default function UserDashboard() {
                 {freeUsed && (
                   <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-sm">
                     <AlertCircle className="w-4 h-4 text-yellow-500 mt-0.5 flex-shrink-0" />
-                    <span>You've used your free deployment. Balance: KES {profile?.balance ?? 0}</span>
+                    <span>You've used your free deployment. Balance: {profile?.balance ?? 0} GRD (50 GRD per deploy)</span>
                   </div>
                 )}
                 <div className="flex gap-2 justify-end">
