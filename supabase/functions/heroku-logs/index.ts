@@ -123,9 +123,16 @@ Deno.serve(async (req) => {
       .filter((l: string) => l.trim())
       .slice(-50);
 
-    // Update deployment logs in DB (realtime will push to client)
+    // Deduplicate: merge with existing, remove duplicates, keep last 100
     const existingLogs = deployment.logs || [];
-    const newLogs = [...existingLogs, ...logLines].slice(-100);
+    const allLogs = [...existingLogs, ...logLines];
+    const seen = new Set<string>();
+    const newLogs = allLogs.filter(l => {
+      const trimmed = l.trim();
+      if (!trimmed || seen.has(trimmed)) return false;
+      seen.add(trimmed);
+      return true;
+    }).slice(-100);
 
     await supabase
       .from("deployments")
