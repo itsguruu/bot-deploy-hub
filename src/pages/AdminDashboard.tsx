@@ -199,7 +199,7 @@ export default function AdminDashboard() {
                   <div key={p.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
                     <div>
                       <p className="text-sm font-medium">{p.email}</p>
-                      <p className="text-xs text-muted-foreground">KES {p.amount}</p>
+                      <p className="text-xs text-muted-foreground">{p.amount} GRD</p>
                     </div>
                     <div className="flex gap-1">
                       {p.screenshot_url && (
