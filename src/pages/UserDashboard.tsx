@@ -162,6 +162,8 @@ export default function UserDashboard() {
 
   const handleFetchLogs = async (deploymentId: string) => {
     setShowLogs(deploymentId);
+    const dep = deployments.find(d => d.id === deploymentId);
+    if (!dep?.heroku_app_name) return; // No app yet, just show existing logs
     try {
       await supabase.functions.invoke("heroku-logs", {
         body: { deployment_id: deploymentId },
