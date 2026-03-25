@@ -92,10 +92,11 @@ export default function UserDashboard() {
     e.preventDefault();
     if (!user) return;
 
-    if (freeUsed && (profile?.balance ?? 0) <= 0) {
+    const cost = 50;
+    if (freeUsed && (profile?.balance ?? 0) < cost) {
       setShowPayment(true);
       setShowDeploy(false);
-      toast.error("Insufficient balance. Please submit a payment first.");
+      toast.error("Insufficient balance. You need at least 50 GRD to deploy.");
       return;
     }
 
@@ -117,11 +118,16 @@ export default function UserDashboard() {
       return;
     }
 
-    // Increment free_deploys_used if this is the free one
+    // Increment free_deploys_used if this is the free one, otherwise deduct 50 GRD
     if (!freeUsed) {
       await supabase
         .from("profiles")
         .update({ free_deploys_used: (profile?.free_deploys_used ?? 0) + 1 })
+        .eq("user_id", user.id);
+    } else {
+      await supabase
+        .from("profiles")
+        .update({ balance: (profile?.balance ?? 0) - cost })
         .eq("user_id", user.id);
     }
 
