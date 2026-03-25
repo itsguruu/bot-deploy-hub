@@ -55,7 +55,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get the key to use
+    // Get API key - prefer user's own, fall back to global
     let apiKey = herokuApiKey;
     const { data: userKey } = await supabase
       .from("heroku_keys")
@@ -64,7 +64,18 @@ Deno.serve(async (req) => {
       .eq("valid", true)
       .limit(1)
       .maybeSingle();
-    if (userKey) apiKey = userKey.api_key;
+    if (userKey) {
+      apiKey = userKey.api_key;
+    } else {
+      const { data: globalKey } = await supabase
+        .from("heroku_keys")
+        .select("*")
+        .eq("is_global", true)
+        .eq("valid", true)
+        .limit(1)
+        .maybeSingle();
+      if (globalKey) apiKey = globalKey.api_key;
+    }
 
     if (!apiKey) {
       return new Response(JSON.stringify({ error: "No Heroku API key" }), {
