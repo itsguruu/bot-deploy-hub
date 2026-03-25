@@ -92,10 +92,11 @@ export default function UserDashboard() {
     e.preventDefault();
     if (!user) return;
 
-    if (freeUsed && (profile?.balance ?? 0) <= 0) {
+    const cost = 50;
+    if (freeUsed && (profile?.balance ?? 0) < cost) {
       setShowPayment(true);
       setShowDeploy(false);
-      toast.error("Insufficient balance. Please submit a payment first.");
+      toast.error("Insufficient balance. You need at least 50 GRD to deploy.");
       return;
     }
 
@@ -117,11 +118,16 @@ export default function UserDashboard() {
       return;
     }
 
-    // Increment free_deploys_used if this is the free one
+    // Increment free_deploys_used if this is the free one, otherwise deduct 50 GRD
     if (!freeUsed) {
       await supabase
         .from("profiles")
         .update({ free_deploys_used: (profile?.free_deploys_used ?? 0) + 1 })
+        .eq("user_id", user.id);
+    } else {
+      await supabase
+        .from("profiles")
+        .update({ balance: (profile?.balance ?? 0) - cost })
         .eq("user_id", user.id);
     }
 
@@ -304,7 +310,7 @@ export default function UserDashboard() {
             { label: "Total Bots", value: deployments.length, icon: Server },
             { label: "Running", value: deployments.filter(d => d.status === "running").length, icon: Activity },
             { label: "Free Deploys Left", value: freeUsed ? 0 : 1, icon: Clock },
-            { label: "Balance", value: `KES ${profile?.balance ?? 0}`, icon: AlertCircle },
+            { label: "Balance", value: `${profile?.balance ?? 0} GRD`, icon: AlertCircle },
           ].map(s => (
             <div key={s.label} className="surface rounded-xl p-4">
               <div className="flex items-center gap-2 text-muted-foreground text-xs mb-2">
@@ -348,7 +354,7 @@ export default function UserDashboard() {
                 {freeUsed && (
                   <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-sm">
                     <AlertCircle className="w-4 h-4 text-yellow-500 mt-0.5 flex-shrink-0" />
-                    <span>You've used your free deployment. Balance: KES {profile?.balance ?? 0}</span>
+                    <span>You've used your free deployment. Balance: {profile?.balance ?? 0} GRD (50 GRD per deploy)</span>
                   </div>
                 )}
                 <div className="flex gap-2 justify-end">
@@ -382,7 +388,7 @@ export default function UserDashboard() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Amount (KES)</label>
+                  <label className="text-sm font-medium">Amount (GRD)</label>
                   <Input type="number" placeholder="300" className="bg-secondary" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} required min="1" />
                 </div>
                 <div className="space-y-2">
@@ -450,13 +456,22 @@ export default function UserDashboard() {
                 </div>
               </div>
               <div className="flex-1 overflow-y-auto bg-background rounded-lg p-4 font-mono text-xs space-y-1 max-h-[60vh]">
-                {deployments.find(d => d.id === showLogs)?.logs?.length ? (
-                  deployments.find(d => d.id === showLogs)!.logs!.map((log, i) => (
-                    <p key={i} className={`${log.includes("❌") || log.includes("error") ? "text-destructive" : log.includes("✅") ? "text-green-500" : log.includes("⚠️") ? "text-yellow-500" : "text-muted-foreground"}`}>
-                      <span className="text-primary">›</span> {log}
+                {(() => {
+                  const rawLogs = deployments.find(d => d.id === showLogs)?.logs || [];
+                  // Deduplicate logs while preserving order
+                  const seen = new Set<string>();
+                  const uniqueLogs = rawLogs.filter(log => {
+                    const trimmed = log.trim();
+                    if (!trimmed || seen.has(trimmed)) return false;
+                    seen.add(trimmed);
+                    return true;
+                  });
+                  return uniqueLogs.length > 0 ? uniqueLogs.map((log, i) => (
+                    <p key={i} className={`${log.includes("❌") || log.toLowerCase().includes("error") || log.toLowerCase().includes("fatal") ? "text-destructive" : log.includes("✅") || log.toLowerCase().includes("build succeeded") || log.toLowerCase().includes("deployed") || log.includes("State changed to up") ? "text-green-500" : log.includes("⚠️") || log.toLowerCase().includes("warning") ? "text-yellow-500" : log.includes("-----> ") || log.includes("==>") ? "text-primary font-semibold" : "text-muted-foreground"}`}>
+                      <span className="text-primary/60 mr-2 select-none">{String(i + 1).padStart(3, ' ')}</span>{log}
                     </p>
-                  ))
-                ) : (
+                  )) : null;
+                })() || (
                   <div className="text-center text-muted-foreground py-8">
                     <Terminal className="w-6 h-6 mx-auto mb-2 opacity-50" />
                     <p>No logs yet. Logs will appear once the bot starts deploying.</p>

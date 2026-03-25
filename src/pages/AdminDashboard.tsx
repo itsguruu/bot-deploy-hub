@@ -79,7 +79,7 @@ export default function AdminDashboard() {
     const userProfile = profiles.find(p => p.user_id === userId);
     if (!userProfile) return;
     await supabase.from("profiles").update({ balance: Number(userProfile.balance) + amount }).eq("user_id", userId);
-    toast.success(`Added KES ${amount} to ${userProfile.email}`);
+    toast.success(`Added ${amount} GRD to ${userProfile.email}`);
     setFundAmount("");
     setSelectedUser(null);
     fetchData();
@@ -172,7 +172,7 @@ export default function AdminDashboard() {
               {[
                 { label: "Total Users", value: profiles.length, icon: Users },
                 { label: "Total Deploys", value: allDeployments.length, icon: Server },
-                { label: "Revenue", value: `KES ${totalRevenue.toLocaleString()}`, icon: DollarSign },
+                { label: "Revenue", value: `${totalRevenue.toLocaleString()} GRD`, icon: DollarSign },
                 { label: "Pending", value: pendingPayments.length, icon: Clock },
               ].map(s => (
                 <div key={s.label} className="surface rounded-xl p-4">
@@ -199,7 +199,7 @@ export default function AdminDashboard() {
                   <div key={p.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
                     <div>
                       <p className="text-sm font-medium">{p.email}</p>
-                      <p className="text-xs text-muted-foreground">KES {p.amount}</p>
+                      <p className="text-xs text-muted-foreground">{p.amount} GRD</p>
                     </div>
                     <div className="flex gap-1">
                       {p.screenshot_url && (
@@ -247,7 +247,7 @@ export default function AdminDashboard() {
                     <div className="flex items-center gap-6 text-sm">
                       <div className="text-center">
                         <p className="text-muted-foreground text-xs">Balance</p>
-                        <p className="font-mono font-bold">KES {p.balance}</p>
+                        <p className="font-mono font-bold">{p.balance} GRD</p>
                       </div>
                       <div className="text-center">
                         <p className="text-muted-foreground text-xs">Deploys</p>
@@ -290,7 +290,7 @@ export default function AdminDashboard() {
                       </p>
                     </div>
                     <div className="flex items-center gap-4">
-                      <p className="font-mono font-bold">KES {p.amount}</p>
+                      <p className="font-mono font-bold">{p.amount} GRD</p>
                       {p.screenshot_url && (
                         <Button variant="outline" size="sm" onClick={() => viewScreenshot(p.screenshot_url!)} className="text-xs">
                           <Image className="w-3 h-3 mr-1" /> View Proof
@@ -375,9 +375,9 @@ export default function AdminDashboard() {
             <div className="surface rounded-xl p-6 w-full max-w-sm">
               <h3 className="text-lg font-bold mb-2">Add Funds</h3>
               <p className="text-sm text-muted-foreground mb-4">Add funds manually to <span className="text-foreground font-medium">{selectedUser.display_name || selectedUser.email}</span></p>
-              <p className="text-sm mb-4">Current balance: <span className="font-mono font-bold">KES {selectedUser.balance}</span></p>
+              <p className="text-sm mb-4">Current balance: <span className="font-mono font-bold">{selectedUser.balance} GRD</span></p>
               <div className="flex gap-2 mb-4">
-                <Input type="number" placeholder="Amount in KES" className="bg-secondary" value={fundAmount} onChange={e => setFundAmount(e.target.value)} />
+                <Input type="number" placeholder="Amount in GRD" className="bg-secondary" value={fundAmount} onChange={e => setFundAmount(e.target.value)} />
                 <Button variant="hero" onClick={() => fundAmount && addFunds(selectedUser.user_id, Number(fundAmount))} disabled={!fundAmount || Number(fundAmount) <= 0}>Add</Button>
               </div>
               <Button variant="ghost" className="w-full" onClick={() => setSelectedUser(null)}>Cancel</Button>
