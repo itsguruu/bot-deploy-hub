@@ -304,7 +304,7 @@ export default function UserDashboard() {
             { label: "Total Bots", value: deployments.length, icon: Server },
             { label: "Running", value: deployments.filter(d => d.status === "running").length, icon: Activity },
             { label: "Free Deploys Left", value: freeUsed ? 0 : 1, icon: Clock },
-            { label: "Balance", value: `KES ${profile?.balance ?? 0}`, icon: AlertCircle },
+            { label: "Balance", value: `${profile?.balance ?? 0} GRD`, icon: AlertCircle },
           ].map(s => (
             <div key={s.label} className="surface rounded-xl p-4">
               <div className="flex items-center gap-2 text-muted-foreground text-xs mb-2">
