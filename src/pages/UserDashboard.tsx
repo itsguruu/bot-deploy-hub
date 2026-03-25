@@ -382,7 +382,7 @@ export default function UserDashboard() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Amount (KES)</label>
+                  <label className="text-sm font-medium">Amount (GRD)</label>
                   <Input type="number" placeholder="300" className="bg-secondary" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} required min="1" />
                 </div>
                 <div className="space-y-2">
