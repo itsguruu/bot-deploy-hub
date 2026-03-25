@@ -177,13 +177,15 @@ export default function UserDashboard() {
   const logsEndRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!showLogs) return;
+    const dep = deployments.find(d => d.id === showLogs);
+    if (!dep?.heroku_app_name) return; // Skip polling for bots without a Heroku app
     const interval = setInterval(() => {
       supabase.functions.invoke("heroku-logs", {
         body: { deployment_id: showLogs },
       }).catch(() => {});
     }, 5000);
     return () => clearInterval(interval);
-  }, [showLogs]);
+  }, [showLogs, deployments]);
 
   // Auto-scroll logs to bottom
   useEffect(() => {
