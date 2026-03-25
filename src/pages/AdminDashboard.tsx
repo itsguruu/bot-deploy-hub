@@ -290,7 +290,7 @@ export default function AdminDashboard() {
                       </p>
                     </div>
                     <div className="flex items-center gap-4">
-                      <p className="font-mono font-bold">KES {p.amount}</p>
+                      <p className="font-mono font-bold">{p.amount} GRD</p>
                       {p.screenshot_url && (
                         <Button variant="outline" size="sm" onClick={() => viewScreenshot(p.screenshot_url!)} className="text-xs">
                           <Image className="w-3 h-3 mr-1" /> View Proof
