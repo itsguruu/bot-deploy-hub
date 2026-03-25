@@ -79,7 +79,7 @@ export default function AdminDashboard() {
     const userProfile = profiles.find(p => p.user_id === userId);
     if (!userProfile) return;
     await supabase.from("profiles").update({ balance: Number(userProfile.balance) + amount }).eq("user_id", userId);
-    toast.success(`Added KES ${amount} to ${userProfile.email}`);
+    toast.success(`Added ${amount} GRD to ${userProfile.email}`);
     setFundAmount("");
     setSelectedUser(null);
     fetchData();
