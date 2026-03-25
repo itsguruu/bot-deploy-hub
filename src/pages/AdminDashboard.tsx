@@ -172,7 +172,7 @@ export default function AdminDashboard() {
               {[
                 { label: "Total Users", value: profiles.length, icon: Users },
                 { label: "Total Deploys", value: allDeployments.length, icon: Server },
-                { label: "Revenue", value: `KES ${totalRevenue.toLocaleString()}`, icon: DollarSign },
+                { label: "Revenue", value: `${totalRevenue.toLocaleString()} GRD`, icon: DollarSign },
                 { label: "Pending", value: pendingPayments.length, icon: Clock },
               ].map(s => (
                 <div key={s.label} className="surface rounded-xl p-4">
