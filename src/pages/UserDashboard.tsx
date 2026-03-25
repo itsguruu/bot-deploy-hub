@@ -472,7 +472,6 @@ export default function UserDashboard() {
                     </p>
                   )) : null;
                 })() || (
-                ) : (
                   <div className="text-center text-muted-foreground py-8">
                     <Terminal className="w-6 h-6 mx-auto mb-2 opacity-50" />
                     <p>No logs yet. Logs will appear once the bot starts deploying.</p>

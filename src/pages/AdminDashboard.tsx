@@ -375,9 +375,9 @@ export default function AdminDashboard() {
             <div className="surface rounded-xl p-6 w-full max-w-sm">
               <h3 className="text-lg font-bold mb-2">Add Funds</h3>
               <p className="text-sm text-muted-foreground mb-4">Add funds manually to <span className="text-foreground font-medium">{selectedUser.display_name || selectedUser.email}</span></p>
-              <p className="text-sm mb-4">Current balance: <span className="font-mono font-bold">KES {selectedUser.balance}</span></p>
+              <p className="text-sm mb-4">Current balance: <span className="font-mono font-bold">{selectedUser.balance} GRD</span></p>
               <div className="flex gap-2 mb-4">
-                <Input type="number" placeholder="Amount in KES" className="bg-secondary" value={fundAmount} onChange={e => setFundAmount(e.target.value)} />
+                <Input type="number" placeholder="Amount in GRD" className="bg-secondary" value={fundAmount} onChange={e => setFundAmount(e.target.value)} />
                 <Button variant="hero" onClick={() => fundAmount && addFunds(selectedUser.user_id, Number(fundAmount))} disabled={!fundAmount || Number(fundAmount) <= 0}>Add</Button>
               </div>
               <Button variant="ghost" className="w-full" onClick={() => setSelectedUser(null)}>Cancel</Button>
