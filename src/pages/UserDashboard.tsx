@@ -456,12 +456,22 @@ export default function UserDashboard() {
                 </div>
               </div>
               <div className="flex-1 overflow-y-auto bg-background rounded-lg p-4 font-mono text-xs space-y-1 max-h-[60vh]">
-                {deployments.find(d => d.id === showLogs)?.logs?.length ? (
-                  deployments.find(d => d.id === showLogs)!.logs!.map((log, i) => (
-                    <p key={i} className={`${log.includes("❌") || log.includes("error") ? "text-destructive" : log.includes("✅") ? "text-green-500" : log.includes("⚠️") ? "text-yellow-500" : "text-muted-foreground"}`}>
-                      <span className="text-primary">›</span> {log}
+                {(() => {
+                  const rawLogs = deployments.find(d => d.id === showLogs)?.logs || [];
+                  // Deduplicate logs while preserving order
+                  const seen = new Set<string>();
+                  const uniqueLogs = rawLogs.filter(log => {
+                    const trimmed = log.trim();
+                    if (!trimmed || seen.has(trimmed)) return false;
+                    seen.add(trimmed);
+                    return true;
+                  });
+                  return uniqueLogs.length > 0 ? uniqueLogs.map((log, i) => (
+                    <p key={i} className={`${log.includes("❌") || log.toLowerCase().includes("error") || log.toLowerCase().includes("fatal") ? "text-destructive" : log.includes("✅") || log.toLowerCase().includes("build succeeded") || log.toLowerCase().includes("deployed") || log.includes("State changed to up") ? "text-green-500" : log.includes("⚠️") || log.toLowerCase().includes("warning") ? "text-yellow-500" : log.includes("-----> ") || log.includes("==>") ? "text-primary font-semibold" : "text-muted-foreground"}`}>
+                      <span className="text-primary/60 mr-2 select-none">{String(i + 1).padStart(3, ' ')}</span>{log}
                     </p>
-                  ))
+                  )) : null;
+                })() || (
                 ) : (
                   <div className="text-center text-muted-foreground py-8">
                     <Terminal className="w-6 h-6 mx-auto mb-2 opacity-50" />
