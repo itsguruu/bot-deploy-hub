@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Bot, Plus, Server, Activity, Clock, Power, PowerOff,
   Upload, Mail, Image, AlertCircle, LogOut,
-  Key, Terminal, RefreshCw, Loader2
+  Key, Terminal, RefreshCw, Loader2, Trash2
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
