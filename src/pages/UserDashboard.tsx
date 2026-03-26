@@ -166,6 +166,24 @@ export default function UserDashboard() {
     setActionLoading(null);
   };
 
+  const handleDeleteBot = async (deploymentId: string, botName: string) => {
+    if (!confirm(`Are you sure you want to delete "${botName}"? This will also delete the Heroku app.`)) return;
+    setActionLoading(deploymentId);
+    try {
+      const { error } = await supabase.functions.invoke("delete-bot", {
+        body: { deployment_id: deploymentId },
+      });
+      if (error) toast.error("Delete failed: " + error.message);
+      else {
+        toast.success("Bot deleted successfully");
+        setDeployments(prev => prev.filter(d => d.id !== deploymentId));
+      }
+    } catch {
+      toast.error("Delete failed");
+    }
+    setActionLoading(null);
+  };
+
   const handleFetchLogs = async (deploymentId: string) => {
     setShowLogs(deploymentId);
     const dep = deployments.find(d => d.id === deploymentId);
