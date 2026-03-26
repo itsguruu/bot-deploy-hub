@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Bot, Plus, Server, Activity, Clock, Power, PowerOff,
   Upload, Mail, Image, AlertCircle, LogOut,
-  Key, Terminal, RefreshCw, Loader2
+  Key, Terminal, RefreshCw, Loader2, Trash2
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -162,6 +162,24 @@ export default function UserDashboard() {
       else toast.success(`Bot ${action} successful`);
     } catch (err: any) {
       toast.error("Action failed");
+    }
+    setActionLoading(null);
+  };
+
+  const handleDeleteBot = async (deploymentId: string, botName: string) => {
+    if (!confirm(`Are you sure you want to delete "${botName}"? This will also delete the Heroku app.`)) return;
+    setActionLoading(deploymentId);
+    try {
+      const { error } = await supabase.functions.invoke("delete-bot", {
+        body: { deployment_id: deploymentId },
+      });
+      if (error) toast.error("Delete failed: " + error.message);
+      else {
+        toast.success("Bot deleted successfully");
+        setDeployments(prev => prev.filter(d => d.id !== deploymentId));
+      }
+    } catch {
+      toast.error("Delete failed");
     }
     setActionLoading(null);
   };
@@ -562,6 +580,16 @@ export default function UserDashboard() {
                       <RefreshCw className="w-4 h-4" />
                     </Button>
                   )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-destructive hover:text-destructive"
+                    title="Delete Bot"
+                    disabled={actionLoading === d.id}
+                    onClick={() => handleDeleteBot(d.id, d.name)}
+                  >
+                    {actionLoading === d.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  </Button>
                 </div>
               </div>
             </div>
