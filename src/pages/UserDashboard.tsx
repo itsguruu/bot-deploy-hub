@@ -580,6 +580,16 @@ export default function UserDashboard() {
                       <RefreshCw className="w-4 h-4" />
                     </Button>
                   )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-destructive hover:text-destructive"
+                    title="Delete Bot"
+                    disabled={actionLoading === d.id}
+                    onClick={() => handleDeleteBot(d.id, d.name)}
+                  >
+                    {actionLoading === d.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  </Button>
                 </div>
               </div>
             </div>
