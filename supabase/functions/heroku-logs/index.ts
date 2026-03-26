@@ -6,6 +6,72 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+// Detect real bot status from log content
+function detectBotStatus(logLines: string[]): string | null {
+  // Check most recent logs first (reverse order)
+  const recentLogs = [...logLines].reverse();
+  for (const line of recentLogs) {
+    const lower = line.toLowerCase();
+    // WhatsApp bot specific statuses
+    if (lower.includes("session closed") || lower.includes("logged out") || lower.includes("logout") || lower.includes("disconnected from whatsapp")) {
+      return "stopped";
+    }
+    if (lower.includes("qr code") || lower.includes("scan qr") || lower.includes("waiting for scan")) {
+      return "pending";
+    }
+    if (lower.includes("connection open") || lower.includes("connected to whatsapp") || lower.includes("bot is ready") || lower.includes("ready to receive") || lower.includes("session restored") || lower.includes("linked") || lower.includes("pairing success")) {
+      return "running";
+    }
+    if (lower.includes("error") && (lower.includes("fatal") || lower.includes("crash") || lower.includes("unhandled"))) {
+      return "failed";
+    }
+    // Heroku dyno statuses
+    if (lower.includes("state changed to up") || lower.includes("process exited with status 0")) {
+      return "running";
+    }
+    if (lower.includes("state changed to crashed") || lower.includes("process exited with status")) {
+      return "failed";
+    }
+    if (lower.includes("state changed to down") || lower.includes("idling")) {
+      return "stopped";
+    }
+    if (lower.includes("state changed to starting") || lower.includes("starting process")) {
+      return "deploying";
+    }
+  }
+  return null;
+}
+
+// Parse Heroku log lines to add status indicators
+function enrichLogLine(line: string): string {
+  const lower = line.toLowerCase();
+  // Don't re-enrich lines that already have emoji
+  if (/^[\[⏹▶🔄✅❌⚠️🚀🔑📦⚙️🔧📤📋⚡🏢👤🟢🔴🟡⏳🔗📡]/.test(line.trim())) return line;
+
+  if (lower.includes("connected to whatsapp") || lower.includes("bot is ready") || lower.includes("session restored") || lower.includes("linked") || lower.includes("pairing success")) {
+    return `🟢 ${line}`;
+  }
+  if (lower.includes("logged out") || lower.includes("session closed") || lower.includes("disconnected")) {
+    return `🔴 ${line}`;
+  }
+  if (lower.includes("qr code") || lower.includes("scan qr") || lower.includes("waiting for scan")) {
+    return `⏳ ${line}`;
+  }
+  if (lower.includes("state changed to up")) {
+    return `🟢 ${line}`;
+  }
+  if (lower.includes("state changed to crashed") || lower.includes("error") || lower.includes("fatal")) {
+    return `🔴 ${line}`;
+  }
+  if (lower.includes("state changed to starting") || lower.includes("starting process") || lower.includes("build")) {
+    return `🟡 ${line}`;
+  }
+  if (lower.includes("state changed to down") || lower.includes("idling")) {
+    return `⏹️ ${line}`;
+  }
+  return line;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -17,7 +83,6 @@ Deno.serve(async (req) => {
     const herokuApiKey = Deno.env.get("HEROKU_API_KEY");
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    // Verify JWT
     const authHeader = req.headers.get("authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "No auth" }), {
@@ -26,10 +91,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
+    const { data: { user }, error: authError } = await supabase.auth.getUser(
+      authHeader.replace("Bearer ", "")
+    );
     if (authError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
@@ -55,7 +119,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get API key - prefer user's own, fall back to global
+    // Get API key
     let apiKey = herokuApiKey;
     const { data: userKey } = await supabase
       .from("heroku_keys")
@@ -84,6 +148,30 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Also check dyno status from Heroku for real state
+    let herokuDynoStatus = "";
+    try {
+      const dynoRes = await fetch(
+        `https://api.heroku.com/apps/${deployment.heroku_app_name}/dynos`,
+        {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            Accept: "application/vnd.heroku+json; version=3",
+          },
+        }
+      );
+      if (dynoRes.ok) {
+        const dynos = await dynoRes.json();
+        if (dynos.length > 0) {
+          herokuDynoStatus = dynos[0].state; // "up", "crashed", "starting", "idle"
+        } else {
+          herokuDynoStatus = "no_dynos";
+        }
+      }
+    } catch {
+      // Non-critical, continue
+    }
+
     // Fetch Heroku logs
     const logRes = await fetch(
       `https://api.heroku.com/apps/${deployment.heroku_app_name}/log-sessions`,
@@ -94,10 +182,7 @@ Deno.serve(async (req) => {
           Accept: "application/vnd.heroku+json; version=3",
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          lines: 100,
-          tail: false,
-        }),
+        body: JSON.stringify({ lines: 100, tail: false }),
       }
     );
 
@@ -113,36 +198,95 @@ Deno.serve(async (req) => {
     }
 
     const logData = await logRes.json();
-
-    // Fetch the actual log content
     const logContentRes = await fetch(logData.logplex_url);
     const logContent = await logContentRes.text();
 
-    const logLines = logContent
+    const rawLines = logContent
       .split("\n")
       .filter((l: string) => l.trim())
-      .slice(-50);
+      .slice(-80);
 
-    // Deduplicate: merge with existing, remove duplicates, keep last 100
-    const existingLogs = deployment.logs || [];
-    const allLogs = [...existingLogs, ...logLines];
+    // Enrich log lines with status indicators
+    const enrichedLines = rawLines.map(enrichLogLine);
+
+    // Merge with existing internal logs (deploy logs etc), deduplicate
+    const existingLogs = (deployment.logs || []).filter((l: string) =>
+      /^[\[⏹▶🔄✅❌⚠️🚀🔑📦⚙️🔧📤📋⚡🏢👤]/.test(l.trim())
+    );
+    const allLogs = [...existingLogs, ...enrichedLines];
     const seen = new Set<string>();
-    const newLogs = allLogs.filter(l => {
-      const trimmed = l.trim();
-      if (!trimmed || seen.has(trimmed)) return false;
-      seen.add(trimmed);
-      return true;
-    }).slice(-100);
+    const newLogs = allLogs
+      .filter((l) => {
+        const trimmed = l.trim();
+        if (!trimmed || seen.has(trimmed)) return false;
+        seen.add(trimmed);
+        return true;
+      })
+      .slice(-100);
+
+    // Determine real status from logs + dyno state
+    const detectedStatus = detectBotStatus(rawLines);
+    let finalStatus = deployment.status;
+
+    // Map Heroku dyno state to our status
+    if (herokuDynoStatus === "up") {
+      finalStatus = "running";
+    } else if (herokuDynoStatus === "crashed") {
+      finalStatus = "failed";
+    } else if (herokuDynoStatus === "starting") {
+      finalStatus = "deploying";
+    } else if (herokuDynoStatus === "idle" || herokuDynoStatus === "no_dynos") {
+      finalStatus = "stopped";
+    }
+
+    // Override with log-based detection if it provides more specific info
+    if (detectedStatus && detectedStatus !== finalStatus) {
+      // Log-based detection for WhatsApp-specific states is more accurate
+      if (detectedStatus === "stopped" && finalStatus === "running") {
+        // Bot logged out but dyno is still up
+        finalStatus = "stopped";
+      }
+    }
+
+    // Add a status summary line if status changed
+    if (finalStatus !== deployment.status) {
+      const statusMsg =
+        finalStatus === "running"
+          ? "🟢 Bot is active and connected"
+          : finalStatus === "stopped"
+          ? "🔴 Bot is stopped or disconnected"
+          : finalStatus === "failed"
+          ? "🔴 Bot has crashed"
+          : finalStatus === "deploying"
+          ? "🟡 Bot is starting up..."
+          : "";
+      if (statusMsg) {
+        const ts = new Date().toLocaleTimeString();
+        newLogs.push(`[${ts}] ${statusMsg}`);
+      }
+    }
 
     await supabase
       .from("deployments")
-      .update({ logs: newLogs })
+      .update({
+        logs: newLogs.slice(-100),
+        status: finalStatus as any,
+        ...(finalStatus === "running" && !deployment.uptime_start
+          ? { uptime_start: new Date().toISOString() }
+          : {}),
+        ...(finalStatus === "stopped" || finalStatus === "failed"
+          ? { uptime_start: null }
+          : {}),
+      })
       .eq("id", deployment_id);
 
-    return new Response(JSON.stringify({ logs: newLogs }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ logs: newLogs, status: finalStatus, dyno_state: herokuDynoStatus }),
+      {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
   } catch (error) {
     console.error("Logs error:", error);
     return new Response(
