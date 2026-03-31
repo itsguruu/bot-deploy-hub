@@ -64,6 +64,42 @@ export type Database = {
           },
         ]
       }
+      featured_repos: {
+        Row: {
+          created_at: string
+          deploy_count: number
+          description: string | null
+          id: string
+          image_url: string | null
+          is_active: boolean
+          name: string
+          repo_url: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          deploy_count?: number
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          name: string
+          repo_url?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          deploy_count?: number
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          name?: string
+          repo_url?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       heroku_keys: {
         Row: {
           api_key: string
