@@ -53,6 +53,11 @@
     --warning-foreground: 0 0% 7%;
     --success: 142 62% 45%;
     --info: 199 89% 48%;
+
+    /* Glass tokens */
+    --glass-bg: 220 20% 12% / 0.6;
+    --glass-border: 0 0% 100% / 0.08;
+    --glass-highlight: 0 0% 100% / 0.05;
   }
 }
 
@@ -92,5 +97,58 @@
   }
   .surface-hover {
     @apply hover:bg-[hsl(var(--surface-hover))] transition-colors duration-200;
+  }
+
+  /* Glass morphism */
+  .glass {
+    background: hsl(var(--glass-bg));
+    backdrop-filter: blur(20px) saturate(1.4);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4);
+    border: 1px solid hsl(var(--glass-border));
+    box-shadow:
+      0 8px 32px hsl(0 0% 0% / 0.3),
+      inset 0 1px 0 hsl(var(--glass-highlight));
+  }
+  .glass-hover {
+    @apply transition-all duration-300;
+  }
+  .glass-hover:hover {
+    background: hsl(220 20% 14% / 0.7);
+    border-color: hsl(0 0% 100% / 0.12);
+    box-shadow:
+      0 12px 40px hsl(0 0% 0% / 0.4),
+      0 0 20px -5px hsl(var(--glow) / 0.15),
+      inset 0 1px 0 hsl(var(--glass-highlight));
+    transform: translateY(-2px);
+  }
+  .glass-card {
+    background: hsl(var(--glass-bg));
+    backdrop-filter: blur(24px) saturate(1.5);
+    -webkit-backdrop-filter: blur(24px) saturate(1.5);
+    border: 1px solid hsl(var(--glass-border));
+    box-shadow:
+      0 8px 32px hsl(0 0% 0% / 0.25),
+      0 0 0 1px hsl(0 0% 100% / 0.03),
+      inset 0 1px 0 hsl(var(--glass-highlight));
+  }
+  .glass-card-premium {
+    background: linear-gradient(135deg, hsl(220 20% 12% / 0.7), hsl(220 20% 8% / 0.5));
+    backdrop-filter: blur(28px) saturate(1.6);
+    -webkit-backdrop-filter: blur(28px) saturate(1.6);
+    border: 1px solid hsl(0 0% 100% / 0.1);
+    box-shadow:
+      0 16px 48px hsl(0 0% 0% / 0.35),
+      0 0 0 1px hsl(0 0% 100% / 0.04),
+      inset 0 1px 0 hsl(0 0% 100% / 0.08),
+      inset 0 -1px 0 hsl(0 0% 0% / 0.1);
+  }
+  .glass-modal {
+    background: hsl(220 18% 10% / 0.9);
+    backdrop-filter: blur(32px) saturate(1.5);
+    -webkit-backdrop-filter: blur(32px) saturate(1.5);
+    border: 1px solid hsl(0 0% 100% / 0.1);
+    box-shadow:
+      0 24px 64px hsl(0 0% 0% / 0.5),
+      inset 0 1px 0 hsl(0 0% 100% / 0.06);
   }
 }

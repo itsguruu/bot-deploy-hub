@@ -6,7 +6,8 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Bot, Plus, Server, Activity, Clock, Power, PowerOff,
   Upload, Mail, Image, AlertCircle, LogOut,
-  Key, Terminal, RefreshCw, Loader2, Trash2
+  Key, Terminal, RefreshCw, Loader2, Trash2,
+  TrendingUp, Wallet, Globe
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -14,6 +15,34 @@ import { toast } from "sonner";
 import type { Tables } from "@/integrations/supabase/types";
 
 type Deployment = Tables<"deployments">;
+
+// Simple currency rates relative to GRD (approximations)
+const CURRENCY_RATES: Record<string, { symbol: string; rate: number }> = {
+  KES: { symbol: "KSh", rate: 1.5 },
+  USD: { symbol: "$", rate: 0.0077 },
+  EUR: { symbol: "€", rate: 0.0071 },
+  GBP: { symbol: "£", rate: 0.0061 },
+  NGN: { symbol: "₦", rate: 11.9 },
+  TZS: { symbol: "TSh", rate: 19.4 },
+  UGX: { symbol: "USh", rate: 28.5 },
+  ZAR: { symbol: "R", rate: 0.14 },
+  INR: { symbol: "₹", rate: 0.64 },
+};
+
+function getLocalCurrency(): { code: string; symbol: string; rate: number } {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    if (tz.includes("Nairobi")) return { code: "KES", ...CURRENCY_RATES.KES };
+    if (tz.includes("Lagos")) return { code: "NGN", ...CURRENCY_RATES.NGN };
+    if (tz.includes("Dar")) return { code: "TZS", ...CURRENCY_RATES.TZS };
+    if (tz.includes("Kampala")) return { code: "UGX", ...CURRENCY_RATES.UGX };
+    if (tz.includes("Johannesburg")) return { code: "ZAR", ...CURRENCY_RATES.ZAR };
+    if (tz.includes("London")) return { code: "GBP", ...CURRENCY_RATES.GBP };
+    if (tz.includes("Kolkata")) return { code: "INR", ...CURRENCY_RATES.INR };
+    if (tz.includes("Europe")) return { code: "EUR", ...CURRENCY_RATES.EUR };
+  } catch {}
+  return { code: "USD", ...CURRENCY_RATES.USD };
+}
 
 export default function UserDashboard() {
   const { user, profile, signOut, refreshProfile, isAdmin } = useAuth();
@@ -33,7 +62,10 @@ export default function UserDashboard() {
   const [deployingId, setDeployingId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
+  const localCurrency = getLocalCurrency();
   const freeUsed = (profile?.free_deploys_used ?? 0) >= 1;
+  const balance = profile?.balance ?? 0;
+  const localBalance = (balance * localCurrency.rate).toFixed(2);
 
   const fetchDeployments = useCallback(async () => {
     if (!user) return;
@@ -45,109 +77,48 @@ export default function UserDashboard() {
     if (data) setDeployments(data);
   }, [user]);
 
-  // Initial fetch + Realtime subscription
-  useEffect(() => {
-    fetchDeployments();
-  }, [fetchDeployments]);
+  useEffect(() => { fetchDeployments(); }, [fetchDeployments]);
 
   useEffect(() => {
     if (!user) return;
-
     const channel = supabase
       .channel("user-deployments")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "deployments",
-          filter: `user_id=eq.${user.id}`,
-        },
+      .on("postgres_changes", { event: "*", schema: "public", table: "deployments", filter: `user_id=eq.${user.id}` },
         (payload) => {
           if (payload.eventType === "INSERT") {
             setDeployments((prev) => [payload.new as Deployment, ...prev]);
           } else if (payload.eventType === "UPDATE") {
-            setDeployments((prev) =>
-              prev.map((d) =>
-                d.id === (payload.new as Deployment).id
-                  ? (payload.new as Deployment)
-                  : d
-              )
-            );
+            setDeployments((prev) => prev.map((d) => d.id === (payload.new as Deployment).id ? (payload.new as Deployment) : d));
           } else if (payload.eventType === "DELETE") {
-            setDeployments((prev) =>
-              prev.filter((d) => d.id !== (payload.old as any).id)
-            );
+            setDeployments((prev) => prev.filter((d) => d.id !== (payload.old as any).id));
           }
         }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+      ).subscribe();
+    return () => { supabase.removeChannel(channel); };
   }, [user]);
 
   const handleDeploy = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-
     const cost = 50;
-    if (freeUsed && (profile?.balance ?? 0) < cost) {
-      setShowPayment(true);
-      setShowDeploy(false);
+    if (freeUsed && balance < cost) {
+      setShowPayment(true); setShowDeploy(false);
       toast.error("Insufficient balance. You need at least 50 GRD to deploy.");
       return;
     }
-
     setLoading(true);
-    const { data, error } = await supabase
-      .from("deployments")
-      .insert({
-        user_id: user.id,
-        name: botName,
-        session_id: sessionId,
-        status: "pending",
-      })
-      .select()
-      .single();
-
-    if (error) {
-      toast.error("Failed to deploy: " + error.message);
-      setLoading(false);
-      return;
-    }
-
-    // Increment free_deploys_used if this is the free one, otherwise deduct 50 GRD
+    const { data, error } = await supabase.from("deployments").insert({ user_id: user.id, name: botName, session_id: sessionId, status: "pending" }).select().single();
+    if (error) { toast.error("Failed to deploy: " + error.message); setLoading(false); return; }
     if (!freeUsed) {
-      await supabase
-        .from("profiles")
-        .update({ free_deploys_used: (profile?.free_deploys_used ?? 0) + 1 })
-        .eq("user_id", user.id);
+      await supabase.from("profiles").update({ free_deploys_used: (profile?.free_deploys_used ?? 0) + 1 }).eq("user_id", user.id);
     } else {
-      await supabase
-        .from("profiles")
-        .update({ balance: (profile?.balance ?? 0) - cost })
-        .eq("user_id", user.id);
+      await supabase.from("profiles").update({ balance: balance - cost }).eq("user_id", user.id);
     }
-
     toast.success("Bot deployment started!");
-    setBotName("");
-    setSessionId("");
-    setShowDeploy(false);
-    refreshProfile();
-
-    // Call deploy edge function
+    setBotName(""); setSessionId(""); setShowDeploy(false); refreshProfile();
     if (data) {
       setDeployingId(data.id);
-      const { data: session } = await supabase.auth.getSession();
-      supabase.functions.invoke("deploy-bot", {
-        body: { deployment_id: data.id },
-      }).then(() => {
-        setDeployingId(null);
-      }).catch(() => {
-        setDeployingId(null);
-      });
+      supabase.functions.invoke("deploy-bot", { body: { deployment_id: data.id } }).finally(() => setDeployingId(null));
     }
     setLoading(false);
   };
@@ -155,14 +126,10 @@ export default function UserDashboard() {
   const handleBotAction = async (deploymentId: string, action: "start" | "stop" | "restart") => {
     setActionLoading(deploymentId);
     try {
-      const { error } = await supabase.functions.invoke("heroku-action", {
-        body: { deployment_id: deploymentId, action },
-      });
+      const { error } = await supabase.functions.invoke("heroku-action", { body: { deployment_id: deploymentId, action } });
       if (error) toast.error("Action failed: " + error.message);
       else toast.success(`Bot ${action} successful`);
-    } catch (err: any) {
-      toast.error("Action failed");
-    }
+    } catch { toast.error("Action failed"); }
     setActionLoading(null);
   };
 
@@ -170,89 +137,49 @@ export default function UserDashboard() {
     if (!confirm(`Are you sure you want to delete "${botName}"? This will also delete the Heroku app.`)) return;
     setActionLoading(deploymentId);
     try {
-      const { error } = await supabase.functions.invoke("delete-bot", {
-        body: { deployment_id: deploymentId },
-      });
+      const { error } = await supabase.functions.invoke("delete-bot", { body: { deployment_id: deploymentId } });
       if (error) toast.error("Delete failed: " + error.message);
-      else {
-        toast.success("Bot deleted successfully");
-        setDeployments(prev => prev.filter(d => d.id !== deploymentId));
-      }
-    } catch {
-      toast.error("Delete failed");
-    }
+      else { toast.success("Bot deleted successfully"); setDeployments(prev => prev.filter(d => d.id !== deploymentId)); }
+    } catch { toast.error("Delete failed"); }
     setActionLoading(null);
   };
 
   const handleFetchLogs = async (deploymentId: string) => {
     setShowLogs(deploymentId);
     const dep = deployments.find(d => d.id === deploymentId);
-    if (!dep?.heroku_app_name) return; // No app yet, just show existing logs
-    try {
-      await supabase.functions.invoke("heroku-logs", {
-        body: { deployment_id: deploymentId },
-      });
-    } catch {
-      // Logs will be updated via realtime
-    }
+    if (!dep?.heroku_app_name) return;
+    try { await supabase.functions.invoke("heroku-logs", { body: { deployment_id: deploymentId } }); } catch {}
   };
 
-  // Auto-refresh logs every 5 seconds when modal is open
   const logsEndRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!showLogs) return;
     const dep = deployments.find(d => d.id === showLogs);
-    if (!dep?.heroku_app_name) return; // Skip polling for bots without a Heroku app
+    if (!dep?.heroku_app_name) return;
     const interval = setInterval(() => {
-      supabase.functions.invoke("heroku-logs", {
-        body: { deployment_id: showLogs },
-      }).catch(() => {});
+      supabase.functions.invoke("heroku-logs", { body: { deployment_id: showLogs } }).catch(() => {});
     }, 5000);
     return () => clearInterval(interval);
   }, [showLogs, deployments]);
 
-  // Auto-scroll logs to bottom
   useEffect(() => {
-    if (showLogs && logsEndRef.current) {
-      logsEndRef.current.scrollIntoView({ behavior: "smooth" });
-    }
+    if (showLogs && logsEndRef.current) logsEndRef.current.scrollIntoView({ behavior: "smooth" });
   }, [showLogs, deployments]);
 
   const handlePaymentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
     setLoading(true);
-
     let screenshotUrl = "";
     if (screenshotFile) {
       const filePath = `${user.id}/${Date.now()}_${screenshotFile.name}`;
-      const { error: uploadError } = await supabase.storage
-        .from("payment-screenshots")
-        .upload(filePath, screenshotFile);
-      if (uploadError) {
-        toast.error("Failed to upload screenshot: " + uploadError.message);
-        setLoading(false);
-        return;
-      }
+      const { error: uploadError } = await supabase.storage.from("payment-screenshots").upload(filePath, screenshotFile);
+      if (uploadError) { toast.error("Failed to upload screenshot: " + uploadError.message); setLoading(false); return; }
       screenshotUrl = filePath;
     }
-
-    const { error } = await supabase.from("payments").insert({
-      user_id: user.id,
-      email: paymentEmail,
-      amount: Number(paymentAmount) || 0,
-      screenshot_url: screenshotUrl,
-    });
-
-    if (error) {
-      toast.error("Failed to submit payment: " + error.message);
-    } else {
-      toast.success("Payment proof submitted! Wait for admin approval.");
-      setShowPayment(false);
-      setPaymentEmail(profile?.email || "");
-      setPaymentAmount("");
-      setScreenshotFile(null);
-    }
+    const { error } = await supabase.from("payments").insert({ user_id: user.id, email: paymentEmail, amount: Number(paymentAmount) || 0, screenshot_url: screenshotUrl });
+    if (error) toast.error("Failed to submit payment: " + error.message);
+    else { toast.success("Payment proof submitted! Wait for admin approval."); setShowPayment(false); setPaymentEmail(profile?.email || ""); setPaymentAmount(""); setScreenshotFile(null); }
     setLoading(false);
   };
 
@@ -260,35 +187,25 @@ export default function UserDashboard() {
     e.preventDefault();
     if (!user) return;
     setLoading(true);
-    const { error } = await supabase.from("heroku_keys").insert({
-      user_id: user.id,
-      api_key: herokuKey,
-      team_or_personal: herokuType,
-      is_global: false,
-    });
-    if (error) {
-      toast.error("Failed to save key: " + error.message);
-    } else {
-      toast.success("Heroku API key saved!");
-      setShowHerokuKey(false);
-      setHerokuKey("");
-    }
+    const { error } = await supabase.from("heroku_keys").insert({ user_id: user.id, api_key: herokuKey, team_or_personal: herokuType, is_global: false });
+    if (error) toast.error("Failed to save key: " + error.message);
+    else { toast.success("Heroku API key saved!"); setShowHerokuKey(false); setHerokuKey(""); }
     setLoading(false);
   };
 
   const statusColor = (s: string) => {
-    if (s === "running") return "text-green-500";
-    if (s === "deploying") return "text-blue-500";
+    if (s === "running") return "text-success";
+    if (s === "deploying") return "text-[hsl(var(--info))]";
     if (s === "stopped" || s === "failed") return "text-destructive";
-    return "text-yellow-500";
+    return "text-warning";
   };
 
   const statusBg = (s: string) => {
-    if (s === "running") return "bg-green-500/10 text-green-500";
-    if (s === "deploying") return "bg-blue-500/10 text-blue-500";
+    if (s === "running") return "bg-success/10 text-success";
+    if (s === "deploying") return "bg-[hsl(var(--info))]/10 text-[hsl(var(--info))]";
     if (s === "stopped") return "bg-muted text-muted-foreground";
     if (s === "failed") return "bg-destructive/10 text-destructive";
-    return "bg-yellow-500/10 text-yellow-500";
+    return "bg-warning/10 text-warning";
   };
 
   const getUptime = (d: Deployment) => {
@@ -300,43 +217,59 @@ export default function UserDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card/50 backdrop-blur-xl sticky top-0 z-40">
+    <div className="min-h-screen bg-background relative">
+      {/* Ambient */}
+      <div className="fixed inset-0 pointer-events-none">
+        <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-primary/3 blur-[200px]" />
+        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] rounded-full bg-[hsl(var(--info))]/3 blur-[200px]" />
+      </div>
+
+      <header className="glass sticky top-0 z-40">
         <div className="container mx-auto flex items-center justify-between h-14 px-4">
           <Link to="/" className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center shadow-lg shadow-primary/20">
               <Bot className="w-4 h-4 text-primary-foreground" />
             </div>
             <span className="font-bold">BOTHOST</span>
           </Link>
           <div className="flex items-center gap-3">
             <span className="text-sm text-muted-foreground hidden sm:block">{profile?.email}</span>
-            {isAdmin && (
-              <Link to="/admin">
-                <Button variant="outline" size="sm" className="text-xs">Admin</Button>
-              </Link>
-            )}
+            {isAdmin && <Link to="/admin"><Button variant="outline" size="sm" className="text-xs">Admin</Button></Link>}
             <Button variant="ghost" size="sm" onClick={signOut}><LogOut className="w-4 h-4" /></Button>
           </div>
         </div>
       </header>
 
-      <div className="container mx-auto max-w-5xl px-4 py-8">
+      <div className="container mx-auto max-w-5xl px-4 py-8 relative">
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          {[
-            { label: "Total Bots", value: deployments.length, icon: Server },
-            { label: "Running", value: deployments.filter(d => d.status === "running").length, icon: Activity },
-            { label: "Free Deploys Left", value: freeUsed ? 0 : 1, icon: Clock },
-            { label: "Balance", value: `${profile?.balance ?? 0} GRD`, icon: AlertCircle },
-          ].map(s => (
-            <div key={s.label} className="surface rounded-xl p-4">
-              <div className="flex items-center gap-2 text-muted-foreground text-xs mb-2">
-                <s.icon className="w-3.5 h-3.5" /> {s.label}
-              </div>
-              <p className="text-xl font-bold">{s.value}</p>
+          <div className="glass-card rounded-2xl p-5">
+            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-2"><Server className="w-3.5 h-3.5" /> Total Bots</div>
+            <p className="text-2xl font-bold">{deployments.length}</p>
+          </div>
+          <div className="glass-card rounded-2xl p-5">
+            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-2"><Activity className="w-3.5 h-3.5" /> Running</div>
+            <p className="text-2xl font-bold text-success">{deployments.filter(d => d.status === "running").length}</p>
+          </div>
+          <div className="glass-card rounded-2xl p-5">
+            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-2"><Clock className="w-3.5 h-3.5" /> Free Left</div>
+            <p className="text-2xl font-bold">{freeUsed ? 0 : 1}</p>
+          </div>
+          {/* Balance card with local currency */}
+          <div className="glass-card-premium rounded-2xl p-5 glow-sm">
+            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-2"><Wallet className="w-3.5 h-3.5" /> Balance</div>
+            <p className="text-2xl font-bold text-primary">{balance} GRD</p>
+            <div className="flex items-center gap-1 mt-1">
+              <Globe className="w-3 h-3 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">≈ {localCurrency.symbol}{localBalance} {localCurrency.code}</span>
             </div>
-          ))}
+            {/* Mini bar chart */}
+            <div className="flex items-end gap-0.5 mt-3 h-6">
+              {[40, 65, 30, 80, 55, 90, balance > 0 ? Math.min((balance / 500) * 100, 100) : 5].map((h, i) => (
+                <div key={i} className={`flex-1 rounded-sm ${i === 6 ? "bg-primary" : "bg-primary/20"}`} style={{ height: `${h}%` }} />
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* Actions */}
@@ -357,22 +290,22 @@ export default function UserDashboard() {
 
         {/* Deploy Modal */}
         {showDeploy && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
-            <div className="surface rounded-xl p-6 w-full max-w-md">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-md p-4">
+            <div className="glass-modal rounded-2xl p-6 w-full max-w-md animate-fade-up">
               <h3 className="text-lg font-bold mb-4">Deploy New Bot</h3>
               <form onSubmit={handleDeploy} className="space-y-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Bot Name</label>
-                  <Input placeholder="My WhatsApp Bot" className="bg-secondary" value={botName} onChange={e => setBotName(e.target.value)} required />
+                  <Input placeholder="My WhatsApp Bot" className="bg-secondary/50 border-[hsl(0_0%_100%/0.08)]" value={botName} onChange={e => setBotName(e.target.value)} required />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Base64 Session ID</label>
-                  <Textarea placeholder="Paste your base64 session ID here..." className="bg-secondary font-mono text-xs min-h-[100px]" value={sessionId} onChange={e => setSessionId(e.target.value)} required />
+                  <Textarea placeholder="Paste your base64 session ID here..." className="bg-secondary/50 border-[hsl(0_0%_100%/0.08)] font-mono text-xs min-h-[100px]" value={sessionId} onChange={e => setSessionId(e.target.value)} required />
                 </div>
                 {freeUsed && (
-                  <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-sm">
-                    <AlertCircle className="w-4 h-4 text-yellow-500 mt-0.5 flex-shrink-0" />
-                    <span>You've used your free deployment. Balance: {profile?.balance ?? 0} GRD (50 GRD per deploy)</span>
+                  <div className="flex items-start gap-2 p-3 rounded-xl glass text-sm">
+                    <AlertCircle className="w-4 h-4 text-warning mt-0.5 flex-shrink-0" />
+                    <span>You've used your free deployment. Balance: {balance} GRD (50 GRD per deploy)</span>
                   </div>
                 )}
                 <div className="flex gap-2 justify-end">
@@ -388,11 +321,11 @@ export default function UserDashboard() {
 
         {/* Payment Modal */}
         {showPayment && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
-            <div className="surface rounded-xl p-6 w-full max-w-md">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-md p-4">
+            <div className="glass-modal rounded-2xl p-6 w-full max-w-md animate-fade-up">
               <h3 className="text-lg font-bold mb-2">Submit Payment Proof</h3>
               <p className="text-muted-foreground text-sm mb-4">Send money first, then upload your confirmation screenshot.</p>
-              <div className="space-y-2 mb-4 p-3 rounded-lg bg-secondary/50 text-sm">
+              <div className="space-y-2 mb-4 p-3 rounded-xl glass text-sm">
                 <p><span className="text-muted-foreground">Safaricom:</span> <span className="font-mono font-bold text-primary">0116284050</span></p>
                 <p><span className="text-muted-foreground">Airtel:</span> <span className="font-mono font-bold text-primary">0105521300</span></p>
                 <p><span className="text-muted-foreground">Name:</span> <span className="font-semibold">AKIDA RAJAB</span></p>
@@ -402,16 +335,16 @@ export default function UserDashboard() {
                   <label className="text-sm font-medium">Your Email</label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input type="email" placeholder="you@example.com" className="pl-10 bg-secondary" value={paymentEmail} onChange={e => setPaymentEmail(e.target.value)} required />
+                    <Input type="email" placeholder="you@example.com" className="pl-10 bg-secondary/50 border-[hsl(0_0%_100%/0.08)]" value={paymentEmail} onChange={e => setPaymentEmail(e.target.value)} required />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Amount (GRD)</label>
-                  <Input type="number" placeholder="300" className="bg-secondary" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} required min="1" />
+                  <Input type="number" placeholder="300" className="bg-secondary/50 border-[hsl(0_0%_100%/0.08)]" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} required min="1" />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Payment Screenshot</label>
-                  <label className="border-2 border-dashed border-border rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 transition-colors block">
+                  <label className="border-2 border-dashed border-[hsl(0_0%_100%/0.08)] rounded-xl p-6 text-center cursor-pointer hover:border-primary/30 transition-colors block glass">
                     <Image className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
                     <p className="text-sm text-muted-foreground">{screenshotFile ? screenshotFile.name : "Click to upload screenshot"}</p>
                     <p className="text-xs text-muted-foreground mt-1">PNG, JPG up to 5MB</p>
@@ -429,20 +362,20 @@ export default function UserDashboard() {
 
         {/* Heroku Key Modal */}
         {showHerokuKey && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
-            <div className="surface rounded-xl p-6 w-full max-w-md">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-md p-4">
+            <div className="glass-modal rounded-2xl p-6 w-full max-w-md animate-fade-up">
               <h3 className="text-lg font-bold mb-2">Add Heroku API Key</h3>
               <p className="text-muted-foreground text-sm mb-4">Provide your own Heroku API key. We'll auto-detect if it's team or personal.</p>
               <form onSubmit={handleSaveHerokuKey} className="space-y-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">API Key</label>
-                  <Input placeholder="HRKU-xxxxx or xxxxxxxx-xxxx..." className="bg-secondary font-mono text-xs" value={herokuKey} onChange={e => setHerokuKey(e.target.value)} required />
+                  <Input placeholder="HRKU-xxxxx or xxxxxxxx-xxxx..." className="bg-secondary/50 border-[hsl(0_0%_100%/0.08)] font-mono text-xs" value={herokuKey} onChange={e => setHerokuKey(e.target.value)} required />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Key Type</label>
                   <div className="flex gap-3">
                     {["personal", "team"].map(t => (
-                      <button key={t} type="button" onClick={() => setHerokuType(t)} className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${herokuType === t ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}>
+                      <button key={t} type="button" onClick={() => setHerokuType(t)} className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all ${herokuType === t ? "border-primary bg-primary/10 text-primary shadow-lg shadow-primary/10" : "border-[hsl(0_0%_100%/0.08)] text-muted-foreground hover:text-foreground"}`}>
                         {t.charAt(0).toUpperCase() + t.slice(1)}
                       </button>
                     ))}
@@ -459,12 +392,15 @@ export default function UserDashboard() {
 
         {/* Logs Modal */}
         {showLogs && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
-            <div className="surface rounded-xl p-6 w-full max-w-2xl max-h-[80vh] flex flex-col">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-md p-4">
+            <div className="glass-modal rounded-2xl p-6 w-full max-w-2xl max-h-[80vh] flex flex-col animate-fade-up">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-bold flex items-center gap-2">
                   <Terminal className="w-5 h-5 text-primary" /> Live Logs
-                  <span className="text-xs text-muted-foreground font-normal ml-2 animate-pulse">● Auto-refreshing</span>
+                  <span className="text-xs text-muted-foreground font-normal ml-2">
+                    <span className="inline-block w-2 h-2 rounded-full bg-success animate-pulse mr-1" />
+                    Auto-refreshing
+                  </span>
                 </h3>
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" onClick={() => handleFetchLogs(showLogs)}>
@@ -473,10 +409,9 @@ export default function UserDashboard() {
                   <Button variant="ghost" size="sm" onClick={() => setShowLogs(null)}>Close</Button>
                 </div>
               </div>
-              <div className="flex-1 overflow-y-auto bg-background rounded-lg p-4 font-mono text-xs space-y-1 max-h-[60vh]">
+              <div className="flex-1 overflow-y-auto rounded-xl bg-background/80 p-4 font-mono text-xs space-y-0.5 max-h-[60vh] border border-[hsl(0_0%_100%/0.04)]">
                 {(() => {
                   const rawLogs = deployments.find(d => d.id === showLogs)?.logs || [];
-                  // Deduplicate logs while preserving order
                   const seen = new Set<string>();
                   const uniqueLogs = rawLogs.filter(log => {
                     const trimmed = log.trim();
@@ -484,11 +419,28 @@ export default function UserDashboard() {
                     seen.add(trimmed);
                     return true;
                   });
-                  return uniqueLogs.length > 0 ? uniqueLogs.map((log, i) => (
-                    <p key={i} className={`${log.includes("❌") || log.toLowerCase().includes("error") || log.toLowerCase().includes("fatal") ? "text-destructive" : log.includes("✅") || log.toLowerCase().includes("build succeeded") || log.toLowerCase().includes("deployed") || log.includes("State changed to up") ? "text-green-500" : log.includes("⚠️") || log.toLowerCase().includes("warning") ? "text-yellow-500" : log.includes("-----> ") || log.includes("==>") ? "text-primary font-semibold" : "text-muted-foreground"}`}>
-                      <span className="text-primary/60 mr-2 select-none">{String(i + 1).padStart(3, ' ')}</span>{log}
-                    </p>
-                  )) : null;
+                  return uniqueLogs.length > 0 ? uniqueLogs.map((log, i) => {
+                    const lower = log.toLowerCase();
+                    let lineClass = "text-muted-foreground";
+                    if (log.includes("🟢") || lower.includes("connected") || lower.includes("bot is ready") || lower.includes("linked") || lower.includes("session restored") || lower.includes("state changed to up")) {
+                      lineClass = "text-success font-medium";
+                    } else if (log.includes("🔴") || lower.includes("error") || lower.includes("fatal") || lower.includes("crashed") || lower.includes("logged out") || lower.includes("session closed")) {
+                      lineClass = "text-destructive";
+                    } else if (log.includes("⏳") || lower.includes("qr code") || lower.includes("scan qr") || lower.includes("waiting")) {
+                      lineClass = "text-warning";
+                    } else if (log.includes("🟡") || lower.includes("starting") || lower.includes("build")) {
+                      lineClass = "text-[hsl(var(--info))]";
+                    } else if (log.includes("-----> ") || log.includes("==>")) {
+                      lineClass = "text-primary font-semibold";
+                    } else if (log.includes("✅") || lower.includes("deployed") || lower.includes("build succeeded")) {
+                      lineClass = "text-success";
+                    }
+                    return (
+                      <p key={i} className={lineClass}>
+                        <span className="text-muted-foreground/40 mr-3 select-none inline-block w-7 text-right">{i + 1}</span>{log}
+                      </p>
+                    );
+                  }) : null;
                 })() || (
                   <div className="text-center text-muted-foreground py-8">
                     <Terminal className="w-6 h-6 mx-auto mb-2 opacity-50" />
@@ -504,90 +456,50 @@ export default function UserDashboard() {
         {/* Deployments List */}
         <div className="space-y-3">
           {deployments.map(d => (
-            <div key={d.id} className="surface rounded-xl p-5 flex items-center justify-between flex-wrap gap-4">
+            <div key={d.id} className="glass-card rounded-2xl p-5 flex items-center justify-between flex-wrap gap-4 glass-hover">
               <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center relative">
+                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center relative border border-primary/10">
                   <Bot className="w-5 h-5 text-primary" />
-                  {d.status === "deploying" && (
-                    <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-blue-500 animate-pulse" />
-                  )}
-                  {d.status === "running" && (
-                    <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-green-500" />
-                  )}
+                  {d.status === "deploying" && <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-[hsl(var(--info))] animate-pulse shadow-lg shadow-[hsl(var(--info))]/30" />}
+                  {d.status === "running" && <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-success shadow-lg shadow-success/30" />}
+                  {d.status === "stopped" && <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-muted-foreground" />}
+                  {d.status === "failed" && <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-destructive shadow-lg shadow-destructive/30" />}
                 </div>
                 <div>
                   <h3 className="font-semibold">{d.name}</h3>
                   <p className="text-xs text-muted-foreground font-mono truncate max-w-[200px]">
                     Session: {d.session_id ? d.session_id.substring(0, 20) : "N/A"}...
                   </p>
-                  {d.heroku_app_name && (
-                    <p className="text-xs text-muted-foreground">
-                      App: {d.heroku_app_name}
-                    </p>
-                  )}
+                  {d.heroku_app_name && <p className="text-xs text-muted-foreground">App: {d.heroku_app_name}</p>}
                 </div>
               </div>
               <div className="flex items-center gap-4">
                 <div className="text-right">
-                  <span className={`text-xs px-2 py-1 rounded-full font-semibold ${statusBg(d.status)}`}>
+                  <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${statusBg(d.status)}`}>
                     {d.status === "deploying" && <Loader2 className="w-3 h-3 inline mr-1 animate-spin" />}
                     {d.status.toUpperCase()}
                   </span>
                   <p className="text-xs text-muted-foreground mt-1">Uptime: {getUptime(d)}</p>
                 </div>
                 <div className="flex gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    title="View Logs"
-                    onClick={() => handleFetchLogs(d.id)}
-                  >
+                  <Button variant="ghost" size="icon" className="h-8 w-8" title="View Logs" onClick={() => handleFetchLogs(d.id)}>
                     <Terminal className="w-4 h-4" />
                   </Button>
                   {d.status === "running" ? (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      title="Stop"
-                      disabled={actionLoading === d.id}
-                      onClick={() => handleBotAction(d.id, "stop")}
-                    >
+                    <Button variant="ghost" size="icon" className="h-8 w-8" title="Stop" disabled={actionLoading === d.id} onClick={() => handleBotAction(d.id, "stop")}>
                       {actionLoading === d.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <PowerOff className="w-4 h-4" />}
                     </Button>
                   ) : d.status !== "deploying" ? (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-primary"
-                      title="Start"
-                      disabled={actionLoading === d.id}
-                      onClick={() => handleBotAction(d.id, "start")}
-                    >
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" title="Start" disabled={actionLoading === d.id} onClick={() => handleBotAction(d.id, "start")}>
                       {actionLoading === d.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Power className="w-4 h-4" />}
                     </Button>
                   ) : null}
                   {d.status !== "deploying" && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      title="Restart"
-                      disabled={actionLoading === d.id}
-                      onClick={() => handleBotAction(d.id, "restart")}
-                    >
+                    <Button variant="ghost" size="icon" className="h-8 w-8" title="Restart" disabled={actionLoading === d.id} onClick={() => handleBotAction(d.id, "restart")}>
                       <RefreshCw className="w-4 h-4" />
                     </Button>
                   )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-destructive hover:text-destructive"
-                    title="Delete Bot"
-                    disabled={actionLoading === d.id}
-                    onClick={() => handleDeleteBot(d.id, d.name)}
-                  >
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" title="Delete Bot" disabled={actionLoading === d.id} onClick={() => handleDeleteBot(d.id, d.name)}>
                     {actionLoading === d.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                   </Button>
                 </div>
@@ -596,7 +508,7 @@ export default function UserDashboard() {
           ))}
 
           {deployments.length === 0 && (
-            <div className="surface rounded-xl p-12 text-center">
+            <div className="glass-card-premium rounded-2xl p-12 text-center">
               <Server className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
               <h3 className="font-semibold mb-1">No deployments yet</h3>
               <p className="text-muted-foreground text-sm mb-4">Deploy your first WhatsApp bot for free!</p>
