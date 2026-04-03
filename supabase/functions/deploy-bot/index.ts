@@ -276,32 +276,93 @@ Deno.serve(async (req) => {
     await bpRes.text();
     await addLog("✅ Node.js buildpack set");
 
-    // Create source endpoint for deploying code
-    await addLog("📤 Preparing deployment source...");
-    const sourceRes = await fetch(
-      `https://api.heroku.com/apps/${appData.name}/sources`,
+    // Deploy bot code from GitHub repo using Heroku Build API
+    await addLog("📤 Deploying bot code from repository...");
+    
+    // Get repo URL - use default or from featured_repos
+    const repoUrl = "https://github.com/Gurulabstech/GURU-MD";
+    const tarballUrl = `${repoUrl}/tarball/main`;
+    
+    await addLog(`📦 Building from: ${repoUrl}`);
+    
+    const buildRes = await fetch(
+      `https://api.heroku.com/apps/${appData.name}/builds`,
       {
         method: "POST",
         headers: {
           Authorization: `Bearer ${herokuApiKey}`,
           Accept: "application/vnd.heroku+json; version=3",
+          "Content-Type": "application/json",
         },
+        body: JSON.stringify({
+          source_blob: {
+            url: tarballUrl,
+            version: `deploy-${Date.now()}`,
+          },
+        }),
       }
     );
 
-    if (!sourceRes.ok) {
-      const errText = await sourceRes.text();
-      await addLog(`⚠️ Source endpoint issue: ${errText}`);
-    } else {
-      const sourceData = await sourceRes.json();
-      await addLog("✅ Source endpoint ready");
+    if (!buildRes.ok) {
+      const errText = await buildRes.text();
+      await addLog(`❌ Build failed: ${errText}`);
+      await supabase
+        .from("deployments")
+        .update({ status: "failed" })
+        .eq("id", deployment_id);
+      return new Response(JSON.stringify({ error: errText }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-      // Create a tarball with bot code
-      // For now we set the app as running since the actual bot code
-      // needs to be provided as a GitHub repo or tarball
-      await addLog(
-        "📋 App is ready. Connect your bot repository or upload code."
+    const buildData = await buildRes.json();
+    await addLog(`🔨 Build started (ID: ${buildData.id?.substring(0, 8)}...)`);
+    
+    // Poll build status
+    let buildComplete = false;
+    let buildAttempts = 0;
+    while (!buildComplete && buildAttempts < 60) {
+      buildAttempts++;
+      await new Promise(r => setTimeout(r, 5000));
+      
+      const statusRes = await fetch(
+        `https://api.heroku.com/apps/${appData.name}/builds/${buildData.id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${herokuApiKey}`,
+            Accept: "application/vnd.heroku+json; version=3",
+          },
+        }
       );
+      
+      if (statusRes.ok) {
+        const statusData = await statusRes.json();
+        if (statusData.status === "succeeded") {
+          buildComplete = true;
+          await addLog("✅ Build succeeded!");
+        } else if (statusData.status === "failed") {
+          await addLog("❌ Build failed. Check logs for details.");
+          await supabase
+            .from("deployments")
+            .update({ status: "failed" })
+            .eq("id", deployment_id);
+          return new Response(JSON.stringify({ error: "Build failed" }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        } else {
+          if (buildAttempts % 3 === 0) {
+            await addLog(`🟡 Building... (${buildAttempts * 5}s elapsed)`);
+          }
+        }
+      } else {
+        await statusRes.text();
+      }
+    }
+
+    if (!buildComplete) {
+      await addLog("⚠️ Build timed out — check logs for status.");
     }
 
     // Scale the web dyno
