@@ -148,7 +148,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Also check dyno status from Heroku for real state
+    // Check dyno status from Heroku for real state
     let herokuDynoStatus = "";
     try {
       const dynoRes = await fetch(
@@ -162,14 +162,21 @@ Deno.serve(async (req) => {
       );
       if (dynoRes.ok) {
         const dynos = await dynoRes.json();
-        if (dynos.length > 0) {
-          herokuDynoStatus = dynos[0].state; // "up", "crashed", "starting", "idle"
+        // Check all dyno types (web + worker)
+        const activeDyno = dynos.find((d: any) => d.state === "up") || 
+                           dynos.find((d: any) => d.state === "starting") ||
+                           dynos.find((d: any) => d.state === "crashed") ||
+                           dynos[0];
+        if (activeDyno) {
+          herokuDynoStatus = activeDyno.state;
         } else {
           herokuDynoStatus = "no_dynos";
         }
+      } else {
+        await dynoRes.text();
       }
     } catch {
-      // Non-critical, continue
+      // Non-critical
     }
 
     // Fetch Heroku logs
