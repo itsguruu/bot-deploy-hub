@@ -96,9 +96,30 @@ Deno.serve(async (req) => {
         .eq("id", deployment_id);
     };
 
+    // Detect dyno type (worker or web)
+    let dynoType = "worker";
+    try {
+      const formRes = await fetch(
+        `https://api.heroku.com/apps/${deployment.heroku_app_name}/formation`,
+        {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            Accept: "application/vnd.heroku+json; version=3",
+          },
+        }
+      );
+      if (formRes.ok) {
+        const formation = await formRes.json();
+        if (formation.length > 0) {
+          dynoType = formation[0].type; // "web" or "worker"
+        }
+      } else {
+        await formRes.text();
+      }
+    } catch {}
+
     if (action === "stop") {
       await addLog("⏹️ Stopping bot...");
-      // Scale down all dynos
       const res = await fetch(
         `https://api.heroku.com/apps/${deployment.heroku_app_name}/formation`,
         {
@@ -109,7 +130,7 @@ Deno.serve(async (req) => {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            updates: [{ type: "web", quantity: 0, size: "eco" }],
+            updates: [{ type: dynoType, quantity: 0, size: "eco" }],
           }),
         }
       );
@@ -131,7 +152,7 @@ Deno.serve(async (req) => {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            updates: [{ type: "web", quantity: 1, size: "eco" }],
+            updates: [{ type: dynoType, quantity: 1, size: "eco" }],
           }),
         }
       );

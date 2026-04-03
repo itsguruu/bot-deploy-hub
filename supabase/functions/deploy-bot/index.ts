@@ -276,37 +276,100 @@ Deno.serve(async (req) => {
     await bpRes.text();
     await addLog("✅ Node.js buildpack set");
 
-    // Create source endpoint for deploying code
-    await addLog("📤 Preparing deployment source...");
-    const sourceRes = await fetch(
-      `https://api.heroku.com/apps/${appData.name}/sources`,
+    // Deploy bot code from GitHub repo using Heroku Build API
+    await addLog("📤 Deploying bot code from repository...");
+    
+    // Get repo URL - use default or from featured_repos
+    const repoUrl = "https://github.com/Gurulabstech/GURU-MD";
+    const tarballUrl = `${repoUrl}/tarball/main`;
+    
+    await addLog(`📦 Building from: ${repoUrl}`);
+    
+    const buildRes = await fetch(
+      `https://api.heroku.com/apps/${appData.name}/builds`,
       {
         method: "POST",
         headers: {
           Authorization: `Bearer ${herokuApiKey}`,
           Accept: "application/vnd.heroku+json; version=3",
+          "Content-Type": "application/json",
         },
+        body: JSON.stringify({
+          source_blob: {
+            url: tarballUrl,
+            version: `deploy-${Date.now()}`,
+          },
+        }),
       }
     );
 
-    if (!sourceRes.ok) {
-      const errText = await sourceRes.text();
-      await addLog(`⚠️ Source endpoint issue: ${errText}`);
-    } else {
-      const sourceData = await sourceRes.json();
-      await addLog("✅ Source endpoint ready");
-
-      // Create a tarball with bot code
-      // For now we set the app as running since the actual bot code
-      // needs to be provided as a GitHub repo or tarball
-      await addLog(
-        "📋 App is ready. Connect your bot repository or upload code."
-      );
+    if (!buildRes.ok) {
+      const errText = await buildRes.text();
+      await addLog(`❌ Build failed: ${errText}`);
+      await supabase
+        .from("deployments")
+        .update({ status: "failed" })
+        .eq("id", deployment_id);
+      return new Response(JSON.stringify({ error: errText }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    // Scale the web dyno
+    const buildData = await buildRes.json();
+    await addLog(`🔨 Build started (ID: ${buildData.id?.substring(0, 8)}...)`);
+    
+    // Poll build status
+    let buildComplete = false;
+    let buildAttempts = 0;
+    while (!buildComplete && buildAttempts < 60) {
+      buildAttempts++;
+      await new Promise(r => setTimeout(r, 5000));
+      
+      const statusRes = await fetch(
+        `https://api.heroku.com/apps/${appData.name}/builds/${buildData.id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${herokuApiKey}`,
+            Accept: "application/vnd.heroku+json; version=3",
+          },
+        }
+      );
+      
+      if (statusRes.ok) {
+        const statusData = await statusRes.json();
+        if (statusData.status === "succeeded") {
+          buildComplete = true;
+          await addLog("✅ Build succeeded!");
+        } else if (statusData.status === "failed") {
+          await addLog("❌ Build failed. Check logs for details.");
+          await supabase
+            .from("deployments")
+            .update({ status: "failed" })
+            .eq("id", deployment_id);
+          return new Response(JSON.stringify({ error: "Build failed" }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        } else {
+          if (buildAttempts % 3 === 0) {
+            await addLog(`🟡 Building... (${buildAttempts * 5}s elapsed)`);
+          }
+        }
+      } else {
+        await statusRes.text();
+      }
+    }
+
+    if (!buildComplete) {
+      await addLog("⚠️ Build timed out — check logs for status.");
+    }
+
+    // Scale the worker dyno (bots use worker, not web)
     await addLog("⚡ Scaling dynos...");
-    const scaleRes = await fetch(
+    
+    // Try worker first, fall back to web
+    let scaleRes = await fetch(
       `https://api.heroku.com/apps/${appData.name}/formation`,
       {
         method: "PATCH",
@@ -316,12 +379,34 @@ Deno.serve(async (req) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          updates: [{ type: "web", quantity: 1, size: "eco" }],
+          updates: [{ type: "worker", quantity: 1, size: "eco" }],
         }),
       }
     );
-    // This might fail if no code is deployed yet, which is fine
-    await scaleRes.text();
+    
+    if (!scaleRes.ok) {
+      await scaleRes.text();
+      // Fall back to web dyno
+      scaleRes = await fetch(
+        `https://api.heroku.com/apps/${appData.name}/formation`,
+        {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${herokuApiKey}`,
+            Accept: "application/vnd.heroku+json; version=3",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            updates: [{ type: "web", quantity: 1, size: "eco" }],
+          }),
+        }
+      );
+      await scaleRes.text();
+      await addLog("✅ Web dyno scaled");
+    } else {
+      await scaleRes.text();
+      await addLog("✅ Worker dyno scaled");
+    }
 
     // Mark as running
     await supabase
