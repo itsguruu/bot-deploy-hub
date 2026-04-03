@@ -178,10 +178,13 @@ Deno.serve(async (req) => {
     }
 
     // Create Heroku app
-    const appName = `bothost-${deployment.name
+    const slug = deployment.name
       .toLowerCase()
       .replace(/[^a-z0-9]/g, "-")
-      .substring(0, 20)}-${Date.now().toString(36)}`;
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "")
+      .substring(0, 12);
+    const appName = `bh-${slug}-${Date.now().toString(36)}`;
 
     await addLog(`📦 Creating Heroku app: ${appName}...`);
 
