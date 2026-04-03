@@ -365,9 +365,11 @@ Deno.serve(async (req) => {
       await addLog("⚠️ Build timed out — check logs for status.");
     }
 
-    // Scale the web dyno
+    // Scale the worker dyno (bots use worker, not web)
     await addLog("⚡ Scaling dynos...");
-    const scaleRes = await fetch(
+    
+    // Try worker first, fall back to web
+    let scaleRes = await fetch(
       `https://api.heroku.com/apps/${appData.name}/formation`,
       {
         method: "PATCH",
@@ -377,12 +379,34 @@ Deno.serve(async (req) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          updates: [{ type: "web", quantity: 1, size: "eco" }],
+          updates: [{ type: "worker", quantity: 1, size: "eco" }],
         }),
       }
     );
-    // This might fail if no code is deployed yet, which is fine
-    await scaleRes.text();
+    
+    if (!scaleRes.ok) {
+      await scaleRes.text();
+      // Fall back to web dyno
+      scaleRes = await fetch(
+        `https://api.heroku.com/apps/${appData.name}/formation`,
+        {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${herokuApiKey}`,
+            Accept: "application/vnd.heroku+json; version=3",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            updates: [{ type: "web", quantity: 1, size: "eco" }],
+          }),
+        }
+      );
+      await scaleRes.text();
+      await addLog("✅ Web dyno scaled");
+    } else {
+      await scaleRes.text();
+      await addLog("✅ Worker dyno scaled");
+    }
 
     // Mark as running
     await supabase
