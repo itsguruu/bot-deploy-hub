@@ -7,7 +7,8 @@ import {
   Bot, Plus, Server, Activity, Clock, Power, PowerOff,
   Upload, Mail, Image, AlertCircle, LogOut,
   Key, Terminal, RefreshCw, Loader2, Trash2,
-  TrendingUp, Wallet, Globe
+  TrendingUp, Wallet, Globe, Heart, BarChart3,
+  Shield, Wifi, WifiOff, Zap
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -16,7 +17,6 @@ import type { Tables } from "@/integrations/supabase/types";
 
 type Deployment = Tables<"deployments">;
 
-// Simple currency rates relative to GRD (approximations)
 const CURRENCY_RATES: Record<string, { symbol: string; rate: number }> = {
   KES: { symbol: "KSh", rate: 1.5 },
   USD: { symbol: "$", rate: 0.0077 },
@@ -44,6 +44,14 @@ function getLocalCurrency(): { code: string; symbol: string; rate: number } {
   return { code: "USD", ...CURRENCY_RATES.USD };
 }
 
+function getHealthStatus(d: Deployment): { label: string; color: string; percent: number } {
+  if (d.status === "running") return { label: "Healthy", color: "text-success", percent: 100 };
+  if (d.status === "deploying") return { label: "Starting", color: "text-[hsl(var(--info))]", percent: 60 };
+  if (d.status === "pending") return { label: "Pending", color: "text-warning", percent: 30 };
+  if (d.status === "failed") return { label: "Unhealthy", color: "text-destructive", percent: 10 };
+  return { label: "Offline", color: "text-muted-foreground", percent: 0 };
+}
+
 export default function UserDashboard() {
   const { user, profile, signOut, refreshProfile, isAdmin } = useAuth();
   const [deployments, setDeployments] = useState<Deployment[]>([]);
@@ -66,6 +74,12 @@ export default function UserDashboard() {
   const freeUsed = (profile?.free_deploys_used ?? 0) >= 1;
   const balance = profile?.balance ?? 0;
   const localBalance = (balance * localCurrency.rate).toFixed(2);
+
+  // Calculate spending
+  const totalDeployed = deployments.length;
+  const freeDeploysUsed = Math.min(profile?.free_deploys_used ?? 0, 1);
+  const paidDeploys = Math.max(0, totalDeployed - freeDeploysUsed);
+  const totalSpent = paidDeploys * 50;
 
   const fetchDeployments = useCallback(async () => {
     if (!user) return;
@@ -193,13 +207,6 @@ export default function UserDashboard() {
     setLoading(false);
   };
 
-  const statusColor = (s: string) => {
-    if (s === "running") return "text-success";
-    if (s === "deploying") return "text-[hsl(var(--info))]";
-    if (s === "stopped" || s === "failed") return "text-destructive";
-    return "text-warning";
-  };
-
   const statusBg = (s: string) => {
     if (s === "running") return "bg-success/10 text-success";
     if (s === "deploying") return "bg-[hsl(var(--info))]/10 text-[hsl(var(--info))]";
@@ -230,60 +237,72 @@ export default function UserDashboard() {
             <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center shadow-lg shadow-primary/20">
               <Bot className="w-4 h-4 text-primary-foreground" />
             </div>
-            <span className="font-bold">BOTHOST</span>
+            <span className="font-bold hidden sm:inline">BOTHOST</span>
           </Link>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-muted-foreground hidden sm:block">{profile?.email}</span>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <span className="text-xs sm:text-sm text-muted-foreground hidden md:block">{profile?.email}</span>
             {isAdmin && <Link to="/admin"><Button variant="outline" size="sm" className="text-xs">Admin</Button></Link>}
             <Button variant="ghost" size="sm" onClick={signOut}><LogOut className="w-4 h-4" /></Button>
           </div>
         </div>
       </header>
 
-      <div className="container mx-auto max-w-5xl px-4 py-8 relative">
-        {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <div className="glass-card rounded-2xl p-5">
+      <div className="container mx-auto max-w-6xl px-3 sm:px-4 py-4 sm:py-8 relative">
+        {/* Stats Grid - responsive */}
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 mb-6 sm:mb-8">
+          <div className="glass-card rounded-2xl p-4 sm:p-5">
             <div className="flex items-center gap-2 text-muted-foreground text-xs mb-2"><Server className="w-3.5 h-3.5" /> Total Bots</div>
-            <p className="text-2xl font-bold">{deployments.length}</p>
+            <p className="text-xl sm:text-2xl font-bold">{deployments.length}</p>
           </div>
-          <div className="glass-card rounded-2xl p-5">
+          <div className="glass-card rounded-2xl p-4 sm:p-5">
             <div className="flex items-center gap-2 text-muted-foreground text-xs mb-2"><Activity className="w-3.5 h-3.5" /> Running</div>
-            <p className="text-2xl font-bold text-success">{deployments.filter(d => d.status === "running").length}</p>
+            <p className="text-xl sm:text-2xl font-bold text-success">{deployments.filter(d => d.status === "running").length}</p>
           </div>
-          <div className="glass-card rounded-2xl p-5">
+          <div className="glass-card rounded-2xl p-4 sm:p-5">
             <div className="flex items-center gap-2 text-muted-foreground text-xs mb-2"><Clock className="w-3.5 h-3.5" /> Free Left</div>
-            <p className="text-2xl font-bold">{freeUsed ? 0 : 1}</p>
+            <p className="text-xl sm:text-2xl font-bold">{freeUsed ? 0 : 1}</p>
           </div>
-          {/* Balance card with local currency */}
-          <div className="glass-card-premium rounded-2xl p-5 glow-sm">
+          {/* Balance card */}
+          <div className="glass-card-premium rounded-2xl p-4 sm:p-5 glow-sm">
             <div className="flex items-center gap-2 text-muted-foreground text-xs mb-2"><Wallet className="w-3.5 h-3.5" /> Balance</div>
-            <p className="text-2xl font-bold text-primary">{balance} GRD</p>
+            <p className="text-xl sm:text-2xl font-bold text-primary">{balance} GRD</p>
             <div className="flex items-center gap-1 mt-1">
               <Globe className="w-3 h-3 text-muted-foreground" />
               <span className="text-xs text-muted-foreground">≈ {localCurrency.symbol}{localBalance} {localCurrency.code}</span>
             </div>
-            {/* Mini bar chart */}
             <div className="flex items-end gap-0.5 mt-3 h-6">
               {[40, 65, 30, 80, 55, 90, balance > 0 ? Math.min((balance / 500) * 100, 100) : 5].map((h, i) => (
                 <div key={i} className={`flex-1 rounded-sm ${i === 6 ? "bg-primary" : "bg-primary/20"}`} style={{ height: `${h}%` }} />
               ))}
             </div>
           </div>
+          {/* Spending card */}
+          <div className="glass-card rounded-2xl p-4 sm:p-5 col-span-2 lg:col-span-1">
+            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-2"><BarChart3 className="w-3.5 h-3.5" /> Spent</div>
+            <p className="text-xl sm:text-2xl font-bold text-warning">{totalSpent} GRD</p>
+            <div className="flex items-center gap-1 mt-1">
+              <TrendingUp className="w-3 h-3 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">{paidDeploys} paid deploy{paidDeploys !== 1 ? "s" : ""}</span>
+            </div>
+            {/* Spending bar */}
+            <div className="w-full bg-muted rounded-full h-1.5 mt-3">
+              <div className="bg-warning rounded-full h-1.5 transition-all" style={{ width: `${Math.min((totalSpent / Math.max(totalSpent + balance, 1)) * 100, 100)}%` }} />
+            </div>
+          </div>
         </div>
 
-        {/* Actions */}
-        <div className="flex items-center justify-between mb-6 flex-wrap gap-2">
-          <h2 className="text-xl font-bold">My Deployments</h2>
+        {/* Actions - responsive */}
+        <div className="flex items-center justify-between mb-4 sm:mb-6 flex-wrap gap-2">
+          <h2 className="text-lg sm:text-xl font-bold">My Deployments</h2>
           <div className="flex gap-2 flex-wrap">
-            <Button variant="outline" size="sm" onClick={() => setShowHerokuKey(true)}>
-              <Key className="w-4 h-4 mr-1" /> Heroku Key
+            <Button variant="outline" size="sm" className="text-xs sm:text-sm" onClick={() => setShowHerokuKey(true)}>
+              <Key className="w-3.5 h-3.5 mr-1" /> <span className="hidden sm:inline">Heroku</span> Key
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setShowPayment(true)}>
-              <Upload className="w-4 h-4 mr-1" /> Submit Payment
+            <Button variant="outline" size="sm" className="text-xs sm:text-sm" onClick={() => setShowPayment(true)}>
+              <Upload className="w-3.5 h-3.5 mr-1" /> <span className="hidden sm:inline">Submit</span> Payment
             </Button>
-            <Button variant="hero" size="sm" onClick={() => setShowDeploy(true)}>
-              <Plus className="w-4 h-4 mr-1" /> Deploy Bot
+            <Button variant="hero" size="sm" className="text-xs sm:text-sm" onClick={() => setShowDeploy(true)}>
+              <Plus className="w-3.5 h-3.5 mr-1" /> Deploy Bot
             </Button>
           </div>
         </div>
@@ -291,7 +310,7 @@ export default function UserDashboard() {
         {/* Deploy Modal */}
         {showDeploy && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-md p-4">
-            <div className="glass-modal rounded-2xl p-6 w-full max-w-md animate-fade-up">
+            <div className="glass-modal rounded-2xl p-5 sm:p-6 w-full max-w-md animate-fade-up max-h-[90vh] overflow-y-auto">
               <h3 className="text-lg font-bold mb-4">Deploy New Bot</h3>
               <form onSubmit={handleDeploy} className="space-y-4">
                 <div className="space-y-2">
@@ -322,7 +341,7 @@ export default function UserDashboard() {
         {/* Payment Modal */}
         {showPayment && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-md p-4">
-            <div className="glass-modal rounded-2xl p-6 w-full max-w-md animate-fade-up">
+            <div className="glass-modal rounded-2xl p-5 sm:p-6 w-full max-w-md animate-fade-up max-h-[90vh] overflow-y-auto">
               <h3 className="text-lg font-bold mb-2">Submit Payment Proof</h3>
               <p className="text-muted-foreground text-sm mb-4">Send money first, then upload your confirmation screenshot.</p>
               <div className="space-y-2 mb-4 p-3 rounded-xl glass text-sm">
@@ -363,7 +382,7 @@ export default function UserDashboard() {
         {/* Heroku Key Modal */}
         {showHerokuKey && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-md p-4">
-            <div className="glass-modal rounded-2xl p-6 w-full max-w-md animate-fade-up">
+            <div className="glass-modal rounded-2xl p-5 sm:p-6 w-full max-w-md animate-fade-up">
               <h3 className="text-lg font-bold mb-2">Add Heroku API Key</h3>
               <p className="text-muted-foreground text-sm mb-4">Provide your own Heroku API key. We'll auto-detect if it's team or personal.</p>
               <form onSubmit={handleSaveHerokuKey} className="space-y-4">
@@ -392,14 +411,14 @@ export default function UserDashboard() {
 
         {/* Logs Modal */}
         {showLogs && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-md p-4">
-            <div className="glass-modal rounded-2xl p-6 w-full max-w-2xl max-h-[80vh] flex flex-col animate-fade-up">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold flex items-center gap-2">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-md p-3 sm:p-4">
+            <div className="glass-modal rounded-2xl p-4 sm:p-6 w-full max-w-2xl max-h-[90vh] flex flex-col animate-fade-up">
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                <h3 className="text-base sm:text-lg font-bold flex items-center gap-2">
                   <Terminal className="w-5 h-5 text-primary" /> Live Logs
                   <span className="text-xs text-muted-foreground font-normal ml-2">
                     <span className="inline-block w-2 h-2 rounded-full bg-success animate-pulse mr-1" />
-                    Auto-refreshing
+                    Auto-refresh
                   </span>
                 </h3>
                 <div className="flex gap-2">
@@ -409,7 +428,7 @@ export default function UserDashboard() {
                   <Button variant="ghost" size="sm" onClick={() => setShowLogs(null)}>Close</Button>
                 </div>
               </div>
-              <div className="flex-1 overflow-y-auto rounded-xl bg-background/80 p-4 font-mono text-xs space-y-0.5 max-h-[60vh] border border-[hsl(0_0%_100%/0.04)]">
+              <div className="flex-1 overflow-y-auto rounded-xl bg-background/80 p-3 sm:p-4 font-mono text-[10px] sm:text-xs space-y-0.5 max-h-[65vh] border border-[hsl(0_0%_100%/0.04)]">
                 {(() => {
                   const rawLogs = deployments.find(d => d.id === showLogs)?.logs || [];
                   const seen = new Set<string>();
@@ -437,7 +456,7 @@ export default function UserDashboard() {
                     }
                     return (
                       <p key={i} className={lineClass}>
-                        <span className="text-muted-foreground/40 mr-3 select-none inline-block w-7 text-right">{i + 1}</span>{log}
+                        <span className="text-muted-foreground/40 mr-2 sm:mr-3 select-none inline-block w-5 sm:w-7 text-right">{i + 1}</span>{log}
                       </p>
                     );
                   }) : null;
@@ -455,60 +474,78 @@ export default function UserDashboard() {
 
         {/* Deployments List */}
         <div className="space-y-3">
-          {deployments.map(d => (
-            <div key={d.id} className="glass-card rounded-2xl p-5 flex items-center justify-between flex-wrap gap-4 glass-hover">
-              <div className="flex items-center gap-4">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center relative border border-primary/10">
-                  <Bot className="w-5 h-5 text-primary" />
-                  {d.status === "deploying" && <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-[hsl(var(--info))] animate-pulse shadow-lg shadow-[hsl(var(--info))]/30" />}
-                  {d.status === "running" && <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-success shadow-lg shadow-success/30" />}
-                  {d.status === "stopped" && <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-muted-foreground" />}
-                  {d.status === "failed" && <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-destructive shadow-lg shadow-destructive/30" />}
-                </div>
-                <div>
-                  <h3 className="font-semibold">{d.name}</h3>
-                  <p className="text-xs text-muted-foreground font-mono truncate max-w-[200px]">
-                    Session: {d.session_id ? d.session_id.substring(0, 20) : "N/A"}...
-                  </p>
-                  {d.heroku_app_name && <p className="text-xs text-muted-foreground">App: {d.heroku_app_name}</p>}
+          {deployments.map(d => {
+            const health = getHealthStatus(d);
+            return (
+              <div key={d.id} className="glass-card rounded-2xl p-4 sm:p-5 glass-hover">
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+                    <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center relative border border-primary/10 flex-shrink-0">
+                      <Bot className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
+                      {d.status === "deploying" && <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-[hsl(var(--info))] animate-pulse shadow-lg shadow-[hsl(var(--info))]/30" />}
+                      {d.status === "running" && <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-success shadow-lg shadow-success/30" />}
+                      {d.status === "stopped" && <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-muted-foreground" />}
+                      {d.status === "failed" && <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-destructive shadow-lg shadow-destructive/30" />}
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-semibold text-sm sm:text-base truncate">{d.name}</h3>
+                      <p className="text-[10px] sm:text-xs text-muted-foreground font-mono truncate max-w-[140px] sm:max-w-[200px]">
+                        Session: {d.session_id ? d.session_id.substring(0, 16) : "N/A"}...
+                      </p>
+                      {d.heroku_app_name && <p className="text-[10px] sm:text-xs text-muted-foreground truncate">App: {d.heroku_app_name}</p>}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
+                    {/* Health bar */}
+                    <div className="hidden sm:flex flex-col items-center gap-1 min-w-[60px]">
+                      <div className="flex items-center gap-1">
+                        {d.status === "running" ? <Wifi className="w-3 h-3 text-success" /> : <WifiOff className="w-3 h-3 text-muted-foreground" />}
+                        <span className={`text-[10px] font-medium ${health.color}`}>{health.label}</span>
+                      </div>
+                      <div className="w-14 bg-muted rounded-full h-1.5">
+                        <div className={`rounded-full h-1.5 transition-all ${health.percent > 60 ? "bg-success" : health.percent > 30 ? "bg-warning" : "bg-destructive"}`} style={{ width: `${health.percent}%` }} />
+                      </div>
+                    </div>
+
+                    <div className="text-right">
+                      <span className={`text-[10px] sm:text-xs px-2 sm:px-2.5 py-1 rounded-full font-semibold ${statusBg(d.status)}`}>
+                        {d.status === "deploying" && <Loader2 className="w-3 h-3 inline mr-1 animate-spin" />}
+                        {d.status.toUpperCase()}
+                      </span>
+                      <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">Uptime: {getUptime(d)}</p>
+                    </div>
+
+                    <div className="flex gap-0.5 sm:gap-1">
+                      <Button variant="ghost" size="icon" className="h-7 w-7 sm:h-8 sm:w-8" title="View Logs" onClick={() => handleFetchLogs(d.id)}>
+                        <Terminal className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                      </Button>
+                      {d.status === "running" ? (
+                        <Button variant="ghost" size="icon" className="h-7 w-7 sm:h-8 sm:w-8" title="Stop" disabled={actionLoading === d.id} onClick={() => handleBotAction(d.id, "stop")}>
+                          {actionLoading === d.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PowerOff className="w-3.5 h-3.5" />}
+                        </Button>
+                      ) : d.status !== "deploying" ? (
+                        <Button variant="ghost" size="icon" className="h-7 w-7 sm:h-8 sm:w-8 text-primary" title="Start" disabled={actionLoading === d.id} onClick={() => handleBotAction(d.id, "start")}>
+                          {actionLoading === d.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Power className="w-3.5 h-3.5" />}
+                        </Button>
+                      ) : null}
+                      {d.status !== "deploying" && (
+                        <Button variant="ghost" size="icon" className="h-7 w-7 sm:h-8 sm:w-8" title="Restart" disabled={actionLoading === d.id} onClick={() => handleBotAction(d.id, "restart")}>
+                          <RefreshCw className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
+                      <Button variant="ghost" size="icon" className="h-7 w-7 sm:h-8 sm:w-8 text-destructive hover:text-destructive" title="Delete Bot" disabled={actionLoading === d.id} onClick={() => handleDeleteBot(d.id, d.name)}>
+                        {actionLoading === d.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center gap-4">
-                <div className="text-right">
-                  <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${statusBg(d.status)}`}>
-                    {d.status === "deploying" && <Loader2 className="w-3 h-3 inline mr-1 animate-spin" />}
-                    {d.status.toUpperCase()}
-                  </span>
-                  <p className="text-xs text-muted-foreground mt-1">Uptime: {getUptime(d)}</p>
-                </div>
-                <div className="flex gap-1">
-                  <Button variant="ghost" size="icon" className="h-8 w-8" title="View Logs" onClick={() => handleFetchLogs(d.id)}>
-                    <Terminal className="w-4 h-4" />
-                  </Button>
-                  {d.status === "running" ? (
-                    <Button variant="ghost" size="icon" className="h-8 w-8" title="Stop" disabled={actionLoading === d.id} onClick={() => handleBotAction(d.id, "stop")}>
-                      {actionLoading === d.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <PowerOff className="w-4 h-4" />}
-                    </Button>
-                  ) : d.status !== "deploying" ? (
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" title="Start" disabled={actionLoading === d.id} onClick={() => handleBotAction(d.id, "start")}>
-                      {actionLoading === d.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Power className="w-4 h-4" />}
-                    </Button>
-                  ) : null}
-                  {d.status !== "deploying" && (
-                    <Button variant="ghost" size="icon" className="h-8 w-8" title="Restart" disabled={actionLoading === d.id} onClick={() => handleBotAction(d.id, "restart")}>
-                      <RefreshCw className="w-4 h-4" />
-                    </Button>
-                  )}
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" title="Delete Bot" disabled={actionLoading === d.id} onClick={() => handleDeleteBot(d.id, d.name)}>
-                    {actionLoading === d.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
 
           {deployments.length === 0 && (
-            <div className="glass-card-premium rounded-2xl p-12 text-center">
+            <div className="glass-card-premium rounded-2xl p-8 sm:p-12 text-center">
               <Server className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
               <h3 className="font-semibold mb-1">No deployments yet</h3>
               <p className="text-muted-foreground text-sm mb-4">Deploy your first WhatsApp bot for free!</p>
