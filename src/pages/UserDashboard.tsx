@@ -249,47 +249,58 @@ export default function UserDashboard() {
 
       <div className="container mx-auto max-w-6xl px-3 sm:px-4 py-4 sm:py-8 relative">
         {/* Stats Grid - responsive */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 mb-6 sm:mb-8">
-          <div className="glass-card rounded-2xl p-4 sm:p-5">
-            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-2"><Server className="w-3.5 h-3.5" /> Total Bots</div>
-            <p className="text-xl sm:text-2xl font-bold">{deployments.length}</p>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3 mb-4 sm:mb-6">
+          <div className="glass-card rounded-xl sm:rounded-2xl p-3 sm:p-4">
+            <div className="flex items-center gap-1.5 text-muted-foreground text-[10px] sm:text-xs mb-1.5"><Server className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> Total Bots</div>
+            <p className="text-lg sm:text-2xl font-bold">{deployments.length}</p>
           </div>
-          <div className="glass-card rounded-2xl p-4 sm:p-5">
-            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-2"><Activity className="w-3.5 h-3.5" /> Running</div>
-            <p className="text-xl sm:text-2xl font-bold text-success">{deployments.filter(d => d.status === "running").length}</p>
+          <div className="glass-card rounded-xl sm:rounded-2xl p-3 sm:p-4">
+            <div className="flex items-center gap-1.5 text-muted-foreground text-[10px] sm:text-xs mb-1.5"><Activity className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> Running</div>
+            <p className="text-lg sm:text-2xl font-bold text-success">{deployments.filter(d => d.status === "running").length}</p>
           </div>
-          <div className="glass-card rounded-2xl p-4 sm:p-5">
-            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-2"><Clock className="w-3.5 h-3.5" /> Free Left</div>
-            <p className="text-xl sm:text-2xl font-bold">{freeUsed ? 0 : 1}</p>
+          <div className="glass-card rounded-xl sm:rounded-2xl p-3 sm:p-4">
+            <div className="flex items-center gap-1.5 text-muted-foreground text-[10px] sm:text-xs mb-1.5"><Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> Free Left</div>
+            <p className="text-lg sm:text-2xl font-bold">{freeUsed ? 0 : 1}</p>
           </div>
-          {/* Balance card */}
-          <div className="glass-card-premium rounded-2xl p-4 sm:p-5 glow-sm">
-            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-2"><Wallet className="w-3.5 h-3.5" /> Balance</div>
-            <p className="text-xl sm:text-2xl font-bold text-primary">{balance} GRD</p>
-            <div className="flex items-center gap-1 mt-1">
-              <Globe className="w-3 h-3 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">≈ {localCurrency.symbol}{localBalance} {localCurrency.code}</span>
-            </div>
-            <div className="flex items-end gap-0.5 mt-3 h-6">
-              {[40, 65, 30, 80, 55, 90, balance > 0 ? Math.min((balance / 500) * 100, 100) : 5].map((h, i) => (
-                <div key={i} className={`flex-1 rounded-sm ${i === 6 ? "bg-primary" : "bg-primary/20"}`} style={{ height: `${h}%` }} />
-              ))}
+          <div className="glass-card-premium rounded-xl sm:rounded-2xl p-3 sm:p-4 glow-sm">
+            <div className="flex items-center gap-1.5 text-muted-foreground text-[10px] sm:text-xs mb-1.5"><Wallet className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> Balance</div>
+            <p className="text-lg sm:text-2xl font-bold text-primary">{balance} GRD</p>
+            <div className="flex items-center gap-1 mt-0.5">
+              <Globe className="w-2.5 h-2.5 text-muted-foreground" />
+              <span className="text-[10px] text-muted-foreground">≈ {localCurrency.symbol}{localBalance}</span>
             </div>
           </div>
-          {/* Spending card */}
-          <div className="glass-card rounded-2xl p-4 sm:p-5 col-span-2 lg:col-span-1">
-            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-2"><BarChart3 className="w-3.5 h-3.5" /> Spent</div>
-            <p className="text-xl sm:text-2xl font-bold text-warning">{totalSpent} GRD</p>
-            <div className="flex items-center gap-1 mt-1">
-              <TrendingUp className="w-3 h-3 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">{paidDeploys} paid deploy{paidDeploys !== 1 ? "s" : ""}</span>
-            </div>
-            {/* Spending bar */}
-            <div className="w-full bg-muted rounded-full h-1.5 mt-3">
-              <div className="bg-warning rounded-full h-1.5 transition-all" style={{ width: `${Math.min((totalSpent / Math.max(totalSpent + balance, 1)) * 100, 100)}%` }} />
+          <div className="glass-card rounded-xl sm:rounded-2xl p-3 sm:p-4 col-span-2 md:col-span-1">
+            <div className="flex items-center gap-1.5 text-muted-foreground text-[10px] sm:text-xs mb-1.5"><BarChart3 className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> Spent</div>
+            <p className="text-lg sm:text-2xl font-bold text-warning">{totalSpent} GRD</p>
+            <div className="w-full bg-muted rounded-full h-1 mt-2">
+              <div className="bg-warning rounded-full h-1 transition-all" style={{ width: `${Math.min((totalSpent / Math.max(totalSpent + balance, 1)) * 100, 100)}%` }} />
             </div>
           </div>
         </div>
+
+        {/* Health Overview Graph */}
+        {deployments.length > 0 && (
+          <div className="glass-card rounded-xl sm:rounded-2xl p-3 sm:p-5 mb-4 sm:mb-6">
+            <div className="flex items-center gap-2 mb-3">
+              <Cpu className="w-4 h-4 text-primary" />
+              <h3 className="text-sm font-semibold">Fleet Health</h3>
+              <span className="text-[10px] text-muted-foreground ml-auto">{deployments.filter(d => d.status === "running").length}/{deployments.length} online</span>
+            </div>
+            <div className="flex items-end gap-1 h-16 sm:h-20">
+              {deployments.map((d, i) => {
+                const h = getHealthStatus(d);
+                const barColor = h.percent > 60 ? "bg-success" : h.percent > 30 ? "bg-warning" : h.percent > 0 ? "bg-destructive" : "bg-muted-foreground/20";
+                return (
+                  <div key={d.id} className="flex-1 flex flex-col items-center gap-0.5 min-w-0" title={`${d.name}: ${h.label}`}>
+                    <div className={`w-full max-w-[32px] rounded-t-sm ${barColor} transition-all duration-500`} style={{ height: `${Math.max(h.percent, 5)}%` }} />
+                    <span className="text-[7px] sm:text-[8px] text-muted-foreground truncate w-full text-center">{d.name.substring(0, 4)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Actions - responsive */}
         <div className="flex items-center justify-between mb-4 sm:mb-6 flex-wrap gap-2">
