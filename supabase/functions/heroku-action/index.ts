@@ -6,6 +6,47 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+// Find any valid API key from all sources
+async function findApiKey(supabase: any, userId: string, envKey: string | undefined): Promise<string | null> {
+  // User keys first
+  const { data: userKeys } = await supabase
+    .from("heroku_keys")
+    .select("api_key")
+    .eq("user_id", userId)
+    .eq("valid", true);
+  
+  // Global keys
+  const { data: globalKeys } = await supabase
+    .from("heroku_keys")
+    .select("api_key")
+    .eq("is_global", true)
+    .eq("valid", true);
+
+  const allKeys = [
+    ...(userKeys || []).map((k: any) => k.api_key),
+    ...(globalKeys || []).map((k: any) => k.api_key),
+  ];
+  if (envKey) allKeys.push(envKey);
+
+  // Try each key
+  for (const key of allKeys) {
+    try {
+      const res = await fetch("https://api.heroku.com/account", {
+        headers: {
+          Authorization: `Bearer ${key}`,
+          Accept: "application/vnd.heroku+json; version=3",
+        },
+      });
+      if (res.ok) {
+        await res.json();
+        return key;
+      }
+      await res.text();
+    } catch {}
+  }
+  return null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -14,7 +55,6 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const herokuApiKey = Deno.env.get("HEROKU_API_KEY");
     const supabase = createClient(supabaseUrl, serviceKey);
 
     const authHeader = req.headers.get("authorization");
@@ -25,10 +65,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
+    const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
     if (authError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
@@ -51,36 +88,22 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Get API key - prefer user's own, fall back to global
-    let apiKey = herokuApiKey;
-    const { data: userKey } = await supabase
-      .from("heroku_keys")
-      .select("*")
-      .eq("user_id", user.id)
-      .eq("valid", true)
-      .limit(1)
-      .maybeSingle();
-    if (userKey) {
-      apiKey = userKey.api_key;
-    } else {
-      const { data: globalKey } = await supabase
-        .from("heroku_keys")
-        .select("*")
-        .eq("is_global", true)
-        .eq("valid", true)
-        .limit(1)
-        .maybeSingle();
-      if (globalKey) apiKey = globalKey.api_key;
+    if (!deployment.heroku_app_name) {
+      return new Response(JSON.stringify({ error: "No Heroku app name" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    if (!apiKey || !deployment.heroku_app_name) {
-      return new Response(
-        JSON.stringify({ error: "No API key or app name" }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
+    // Smart key detection - try all keys
+    const envKey = Deno.env.get("HEROKU_API_KEY");
+    const apiKey = await findApiKey(supabase, user.id, envKey);
+
+    if (!apiKey) {
+      return new Response(JSON.stringify({ error: "No valid Heroku API key found" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     const addLog = async (msg: string) => {
@@ -90,13 +113,10 @@ Deno.serve(async (req) => {
         .eq("id", deployment_id)
         .single();
       const logs = [...(current?.logs || []), `[${new Date().toLocaleTimeString()}] ${msg}`];
-      await supabase
-        .from("deployments")
-        .update({ logs: logs.slice(-100) })
-        .eq("id", deployment_id);
+      await supabase.from("deployments").update({ logs: logs.slice(-100) }).eq("id", deployment_id);
     };
 
-    // Detect dyno type (worker or web)
+    // Detect dyno type
     let dynoType = "worker";
     try {
       const formRes = await fetch(
@@ -110,9 +130,7 @@ Deno.serve(async (req) => {
       );
       if (formRes.ok) {
         const formation = await formRes.json();
-        if (formation.length > 0) {
-          dynoType = formation[0].type; // "web" or "worker"
-        }
+        if (formation.length > 0) dynoType = formation[0].type;
       } else {
         await formRes.text();
       }
@@ -129,16 +147,11 @@ Deno.serve(async (req) => {
             Accept: "application/vnd.heroku+json; version=3",
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            updates: [{ type: dynoType, quantity: 0, size: "eco" }],
-          }),
+          body: JSON.stringify({ updates: [{ type: dynoType, quantity: 0, size: "eco" }] }),
         }
       );
       await res.text();
-      await supabase
-        .from("deployments")
-        .update({ status: "stopped", uptime_start: null })
-        .eq("id", deployment_id);
+      await supabase.from("deployments").update({ status: "stopped", uptime_start: null }).eq("id", deployment_id);
       await addLog("✅ Bot stopped");
     } else if (action === "start") {
       await addLog("▶️ Starting bot...");
@@ -151,19 +164,11 @@ Deno.serve(async (req) => {
             Accept: "application/vnd.heroku+json; version=3",
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            updates: [{ type: dynoType, quantity: 1, size: "eco" }],
-          }),
+          body: JSON.stringify({ updates: [{ type: dynoType, quantity: 1, size: "eco" }] }),
         }
       );
       await res.text();
-      await supabase
-        .from("deployments")
-        .update({
-          status: "running",
-          uptime_start: new Date().toISOString(),
-        })
-        .eq("id", deployment_id);
+      await supabase.from("deployments").update({ status: "running", uptime_start: new Date().toISOString() }).eq("id", deployment_id);
       await addLog("✅ Bot started");
     } else if (action === "restart") {
       await addLog("🔄 Restarting bot...");
@@ -178,10 +183,7 @@ Deno.serve(async (req) => {
         }
       );
       await res.text();
-      await supabase
-        .from("deployments")
-        .update({ uptime_start: new Date().toISOString() })
-        .eq("id", deployment_id);
+      await supabase.from("deployments").update({ uptime_start: new Date().toISOString() }).eq("id", deployment_id);
       await addLog("✅ Bot restarted");
     }
 
@@ -192,13 +194,8 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error("Action error:", error);
     return new Response(
-      JSON.stringify({
-        error: error instanceof Error ? error.message : "Unknown error",
-      }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+      JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
