@@ -8,7 +8,7 @@ import {
   Upload, Mail, Image, AlertCircle, LogOut,
   Key, Terminal, RefreshCw, Loader2, Trash2,
   TrendingUp, Wallet, Globe, Heart, BarChart3,
-  Shield, Wifi, WifiOff, Zap
+  Shield, Wifi, WifiOff, Zap, Cpu
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
