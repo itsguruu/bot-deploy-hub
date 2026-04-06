@@ -228,8 +228,51 @@ Deno.serve(async (req) => {
 
     await supabase.from("deployments").update({ heroku_app_name: appData.name }).eq("id", deployment_id);
 
-    // Set config vars
-    await addLog("⚙️ Setting session config...");
+    // Fetch app.json from repo to get env vars & buildpacks
+    const repoUrl = "https://github.com/Gurulabstech/GURU-MD";
+    let appJsonEnv: Record<string, string> = {};
+    let appJsonBuildpacks: string[] = [];
+    try {
+      await addLog("📋 Fetching app.json from repository...");
+      const appJsonRes = await fetch(
+        `https://raw.githubusercontent.com/Gurulabstech/GURU-MD/main/app.json`,
+        { signal: AbortSignal.timeout(10000) }
+      );
+      if (appJsonRes.ok) {
+        const appJson = await appJsonRes.json();
+        // Extract env vars with defaults
+        if (appJson.env) {
+          for (const [key, val] of Object.entries(appJson.env)) {
+            const envDef = val as any;
+            if (envDef && typeof envDef === "object" && envDef.value !== undefined) {
+              appJsonEnv[key] = String(envDef.value);
+            } else if (envDef && typeof envDef === "object" && envDef.generator) {
+              appJsonEnv[key] = `generated-${Date.now().toString(36)}`;
+            }
+          }
+          const envCount = Object.keys(appJsonEnv).length;
+          await addLog(`✅ Found ${envCount} env vars from app.json`);
+        }
+        // Extract buildpacks
+        if (appJson.buildpacks && Array.isArray(appJson.buildpacks)) {
+          appJsonBuildpacks = appJson.buildpacks.map((bp: any) => bp.url).filter(Boolean);
+          if (appJsonBuildpacks.length > 0) {
+            await addLog(`✅ Found ${appJsonBuildpacks.length} buildpack(s) from app.json`);
+          }
+        }
+      } else {
+        await addLog("ℹ️ No app.json found, using defaults");
+      }
+    } catch {
+      await addLog("ℹ️ Could not fetch app.json, using defaults");
+    }
+
+    // Set config vars - merge app.json defaults with SESSION_ID
+    await addLog("⚙️ Setting config vars...");
+    const configVars: Record<string, string> = {
+      ...appJsonEnv,
+      SESSION_ID: deployment.session_id,
+    };
     const configRes = await fetch(
       `https://api.heroku.com/apps/${appData.name}/config-vars`,
       {
@@ -239,19 +282,23 @@ Deno.serve(async (req) => {
           Accept: "application/vnd.heroku+json; version=3",
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ SESSION_ID: deployment.session_id }),
+        body: JSON.stringify(configVars),
       }
     );
     if (configRes.ok) {
       await configRes.text();
-      await addLog("✅ Session ID configured");
+      const varNames = Object.keys(configVars).join(", ");
+      await addLog(`✅ Config vars set: ${varNames}`);
     } else {
       const errText = await configRes.text();
       await addLog(`⚠️ Config warning: ${errText}`);
     }
 
-    // Set buildpack
+    // Set buildpack(s) - prefer app.json, fallback to Node.js
     await addLog("🔧 Setting buildpack...");
+    const buildpackUpdates = appJsonBuildpacks.length > 0
+      ? appJsonBuildpacks.map((url) => ({ buildpack: url }))
+      : [{ buildpack: "https://github.com/heroku/heroku-buildpack-nodejs" }];
     const bpRes = await fetch(
       `https://api.heroku.com/apps/${appData.name}/buildpack-installations`,
       {
@@ -261,17 +308,14 @@ Deno.serve(async (req) => {
           Accept: "application/vnd.heroku+json; version=3",
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          updates: [{ buildpack: "https://github.com/heroku/heroku-buildpack-nodejs" }],
-        }),
+        body: JSON.stringify({ updates: buildpackUpdates }),
       }
     );
     await bpRes.text();
-    await addLog("✅ Node.js buildpack set");
+    await addLog(`✅ ${buildpackUpdates.length} buildpack(s) set`);
 
     // Deploy from GitHub
     await addLog("📤 Deploying bot code from repository...");
-    const repoUrl = "https://github.com/Gurulabstech/GURU-MD";
     const tarballUrl = `${repoUrl}/tarball/main`;
     await addLog(`📦 Building from: ${repoUrl}`);
 
